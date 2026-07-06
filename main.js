@@ -25,7 +25,9 @@ async function init() {
   renderLoading("Syncing with your Watchlist...");
   try {
     // 1. Fetch Watchlist from Google Sheets
-    const sheetResponse = await fetch(SHEET_URL);
+    const sheetResponse = await fetch(SHEET_URL).catch(e => {
+      throw new Error("Failed to connect to Google Sheets. " + e.message);
+    });
     const sheetResult = await sheetResponse.json();
     if (sheetResult.error) throw new Error(sheetResult.error);
     
@@ -92,7 +94,10 @@ async function init() {
         }
         
         needsApiDelay = true; // We actually hit the network, so we must delay
-        return fetchShowData(query, cacheKey);
+        return fetchShowData(query, cacheKey).catch(e => {
+          console.error("TMDB error for " + query, e);
+          return null; // Ignore individual TMDB failures
+        });
       });
       
       const batchResults = await Promise.all(batchPromises);
