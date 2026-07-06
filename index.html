@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TV Show Tracker</title>
+  <link rel="stylesheet" href="style.css?v=2">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="app">
+    <header class="app-header">
+      <div class="logo">
+        <span class="icon">📺</span>
+        <h1>Weekly Watchlist</h1>
+      </div>
+      <div class="header-actions">
+        <button id="mobile-menu-btn" class="icon-btn mobile-only" title="Menu">☰</button>
+      </div>
+    </header>
+
+    <nav id="app-tabs" class="app-tabs">
+      <button class="tab-btn active" data-tab="schedule">Weekly Schedule</button>
+      <button class="tab-btn" data-tab="current">Current</button>
+      <button class="tab-btn" data-tab="hiatus">Hiatus</button>
+      <button class="tab-btn" data-tab="cancelled">Archive</button>
+      <div class="menu-divider"></div>
+      <button id="admin-toggle-btn" class="settings-btn">⚙️ Sync Settings</button>
+    </nav>
+    
+    <div class="controls-bar">
+      <div class="search-container">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="search-input" placeholder="Search shows...">
+      </div>
+      <div class="sort-container hidden" id="sort-container">
+        <span class="sort-icon">⇅</span>
+        <select id="sort-select">
+          <option value="alpha">Alphabetical</option>
+          <option value="date">Next Air Date</option>
+          <option value="popularity">Popularity</option>
+        </select>
+      </div>
+    </div>
+    
+    <!-- Admin Modal -->
+    <div id="admin-modal" class="modal hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Admin Panel</h2>
+          <button id="admin-close-btn" class="close-icon-btn">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-desc">Keep your Google Sheet organized and up to date.</p>
+          <div class="admin-actions">
+            <button id="sync-btn" class="sync-btn">
+              <span class="sync-icon">⟳</span> Sync & Organize Spreadsheet
+            </button>
+          </div>
+          <p class="modal-hint">Clicking this will check the status of all your shows on TMDB and automatically move them into the correct Current, Hiatus, or Cancelled columns in your Google Sheet.</p>
+        </div>
+      </div>
+    </div>
+    
+    <main id="calendar-container">
+      <div id="loading" class="loading-state">
+        <div class="spinner"></div>
+        <p>Syncing schedule...</p>
+      </div>
+    </main>
+    
+    <footer>
+      <p>Data synced from Google Sheets</p>
+    </footer>
+  </div>
+
+  <script src="main.js?v=3" type="module"></script>
+</body>
+</html>
