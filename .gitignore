@@ -1,0 +1,63 @@
+# Dependencies & Build Artifacts
+node_modules/
+dist/
+dist-ssr/
+build/
+.cache/
+
+# Environment, Secrets & Credentials
+.env
+.env.*
+*.local
+*.key
+*.pem
+*.p12
+*.secret
+.clasprc.json
+secrets/
+*service_account*.json
+*credentials*.json
+
+# Scratch, Research & Analysis Dumps
+scratch/
+scratch/*
+temp/
+tmp/
+*.py
+*.cjs
+*.mjs
+*.bat
+*.txt
+*.bak
+*.zip
+*.tar.gz
+backups/
+prev_*.js
+old_*.js
+e5_*.js
+top_part.js
+scratch_test.js
+test.js
+temp_*.css
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
