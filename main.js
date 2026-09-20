@@ -351,13 +351,16 @@ function renderView() {
   
   const sortContainer = document.getElementById('sort-container');
   const scheduleControls = document.getElementById('schedule-controls');
+  const categoryInfo = document.getElementById('category-info');
   
   if (currentTab === 'schedule') {
     if (sortContainer) sortContainer.classList.add('hidden');
+    if (categoryInfo) categoryInfo.classList.add('hidden');
     if (scheduleControls) scheduleControls.classList.remove('hidden');
     renderCalendarView(container);
   } else {
     if (sortContainer) sortContainer.classList.remove('hidden');
+    if (categoryInfo) categoryInfo.classList.remove('hidden');
     if (scheduleControls) scheduleControls.classList.add('hidden');
     renderGridView(container);
   }
@@ -387,6 +390,18 @@ function renderGridView(container) {
   if (searchQuery) {
     filteredShows = filteredShows.filter(s => s.name.toLowerCase().includes(searchQuery));
   }
+
+  // Update Category Info Header
+  const categoryTitles = {
+    'current': 'Current Shows',
+    'hiatus': 'On Hiatus',
+    'cancelled': 'Archived Shows'
+  };
+  
+  const catTitleEl = document.getElementById('category-title');
+  const catCountEl = document.getElementById('category-count');
+  if (catTitleEl) catTitleEl.textContent = categoryTitles[currentTab] || 'Shows';
+  if (catCountEl) catCountEl.textContent = `${filteredShows.length} show${filteredShows.length === 1 ? '' : 's'}`;
   
   // Sort
   if (currentSort === 'alpha') {

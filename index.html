@@ -9,43 +9,55 @@
 </head>
 <body>
   <div id="app">
-    <header class="app-header">
-      <div class="logo">
-        <span class="icon">📺</span>
-        <h1>Weekly Watchlist</h1>
+    <!-- Clean Unified Top Navbar -->
+    <header class="app-navbar">
+      <div class="navbar-left">
+        <div class="logo">
+          <span class="icon">📺</span>
+          <h1>TV Tracker</h1>
+        </div>
       </div>
-      <div class="header-actions">
+
+      <div class="navbar-center">
+        <nav id="app-tabs" class="app-tabs">
+          <button class="tab-btn active" data-tab="schedule">Schedule</button>
+          <button class="tab-btn" data-tab="current">Current</button>
+          <button class="tab-btn" data-tab="hiatus">Hiatus</button>
+          <button class="tab-btn" data-tab="cancelled">Archive</button>
+        </nav>
+      </div>
+
+      <div class="navbar-right">
+        <div class="search-container">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="search-input" placeholder="Search shows...">
+        </div>
+        <button id="admin-toggle-btn" class="settings-icon-btn" title="Sync Settings">⚙️</button>
         <button id="mobile-menu-btn" class="icon-btn mobile-only" title="Menu">☰</button>
       </div>
     </header>
 
-    <nav id="app-tabs" class="app-tabs">
-      <button class="tab-btn active" data-tab="schedule">Schedule</button>
-      <button class="tab-btn" data-tab="current">Current</button>
-      <button class="tab-btn" data-tab="hiatus">Hiatus</button>
-      <button class="tab-btn" data-tab="cancelled">Archive</button>
-      <div class="menu-divider"></div>
-      <button id="admin-toggle-btn" class="settings-btn">⚙️ Sync Settings</button>
-    </nav>
-    
-    <div class="controls-bar">
-      <div class="search-container">
-        <span class="search-icon">🔍</span>
-        <input type="text" id="search-input" placeholder="Search shows...">
-      </div>
-
+    <!-- Context Sub-Toolbar -->
+    <div class="sub-toolbar" id="sub-toolbar">
+      <!-- Schedule Mode: Date Navigation (Left) & Scope Switcher (Right) -->
       <div class="schedule-controls" id="schedule-controls">
-        <div class="date-nav">
+        <div class="date-nav" id="schedule-date-nav">
           <button id="schedule-prev-btn" class="nav-btn" title="Previous Range">‹</button>
           <button id="schedule-today-btn" class="nav-btn today-btn" title="Current Range">Today</button>
-          <span id="schedule-range-label" class="range-label">This Week</span>
           <button id="schedule-next-btn" class="nav-btn" title="Next Range">›</button>
+          <span id="schedule-range-label" class="range-label">This Week</span>
         </div>
         <div class="scope-switcher" id="scope-switcher">
           <button class="scope-btn active" data-scope="1week">1 Week</button>
           <button class="scope-btn" data-scope="2week">2 Weeks</button>
           <button class="scope-btn" data-scope="month">Month</button>
         </div>
+      </div>
+
+      <!-- Grid Mode: Category Count (Left) & Sort Dropdown (Right) -->
+      <div class="category-info hidden" id="category-info">
+        <span id="category-title" class="category-title">Current</span>
+        <span id="category-count" class="category-count">0 shows</span>
       </div>
 
       <div class="sort-container hidden" id="sort-container">
@@ -85,10 +97,10 @@
     </main>
     
     <footer>
-      <p>Data synced from Google Sheets | TV Show Tracker v1.2.0</p>
+      <p>Data synced from Google Sheets | TV Show Tracker v1.2.1</p>
     </footer>
   </div>
 
-  <script src="main.js?v=4" type="module"></script>
+  <script src="main.js?v=5" type="module"></script>
 </body>
 </html>

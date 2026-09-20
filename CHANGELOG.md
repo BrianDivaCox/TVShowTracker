@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.1] - 2026-09-19
+
+### Added
+- **Unified Navigation Bar**: Consolidated brand, tabs, search, and settings into one header.
+- **Context Sub-Toolbar**: Streamlined toolbar displaying relevant controls per active tab.
+- **Live Category Counters**: Display live show counts on category tabs automatically.
+
+### Changed
+- Streamlined layout into clean 2-tier design eliminating vertical clutter.
+- Enhanced compact search input with responsive focus transitions.
+
 ## [1.2.0] - 2026-09-19
 
 ### Added
