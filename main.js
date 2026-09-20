@@ -296,6 +296,96 @@ async function init() {
     if (syncBtn) {
       syncBtn.addEventListener('click', handleSync);
     }
+
+    // 7. Setup Add Show Modal & Live TMDB Search
+    const addShowModal = document.getElementById('add-show-modal');
+    const addShowNavBtn = document.getElementById('add-show-nav-btn');
+    const addShowCloseBtn = document.getElementById('add-show-close-btn');
+    const addShowInput = document.getElementById('add-show-input');
+    const addShowClearBtn = document.getElementById('add-show-clear-btn');
+    const addShowStatus = document.getElementById('add-show-status');
+    const addShowResults = document.getElementById('add-show-results');
+
+    if (addShowNavBtn && addShowModal) {
+      addShowNavBtn.addEventListener('click', () => {
+        addShowModal.classList.remove('hidden');
+        if (addShowInput) {
+          addShowInput.focus();
+        }
+      });
+    }
+
+    if (addShowCloseBtn && addShowModal) {
+      addShowCloseBtn.addEventListener('click', () => {
+        addShowModal.classList.add('hidden');
+      });
+    }
+
+    if (addShowModal) {
+      addShowModal.addEventListener('click', (e) => {
+        if (e.target === addShowModal) {
+          addShowModal.classList.add('hidden');
+        }
+      });
+    }
+
+    // Global keyboard listener for Escape key to close modals
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        if (addShowModal) addShowModal.classList.add('hidden');
+        if (adminModal) adminModal.classList.add('hidden');
+      }
+    });
+
+    let searchDebounceTimer = null;
+    if (addShowInput) {
+      addShowInput.addEventListener('input', (e) => {
+        const query = e.target.value.trim();
+        if (addShowClearBtn) {
+          if (query.length > 0) {
+            addShowClearBtn.classList.remove('hidden');
+          } else {
+            addShowClearBtn.classList.add('hidden');
+          }
+        }
+
+        clearTimeout(searchDebounceTimer);
+        if (query.length < 2) {
+          if (addShowResults) {
+            addShowResults.innerHTML = `
+              <div class="add-show-placeholder">
+                <span class="placeholder-icon">📺</span>
+                <p>Type a show title above to search TMDB</p>
+              </div>
+            `;
+          }
+          if (addShowStatus) addShowStatus.classList.add('hidden');
+          return;
+        }
+
+        if (addShowStatus) addShowStatus.classList.remove('hidden');
+        searchDebounceTimer = setTimeout(async () => {
+          await executeTmdbSearch(query);
+        }, 300);
+      });
+    }
+
+    if (addShowClearBtn && addShowInput) {
+      addShowClearBtn.addEventListener('click', () => {
+        addShowInput.value = '';
+        addShowClearBtn.classList.add('hidden');
+        if (addShowResults) {
+          addShowResults.innerHTML = `
+            <div class="add-show-placeholder">
+              <span class="placeholder-icon">📺</span>
+              <p>Type a show title above to search TMDB</p>
+            </div>
+          `;
+        }
+        if (addShowStatus) addShowStatus.classList.add('hidden');
+        addShowInput.focus();
+      });
+    }
     
   } catch (err) {
     document.getElementById('calendar-container').innerHTML = `<div class="error-state"><h3>Oops!</h3><p>${err.message}</p></div>`;
@@ -326,15 +416,171 @@ function updateAdminAuthUI(user) {
   }
 }
 
+async function executeTmdbSearch(query) {
+  const addShowStatus = document.getElementById('add-show-status');
+  const addShowResults = document.getElementById('add-show-results');
+  
+  try {
+    const res = await fetch(`${TMDB_BASE}/search/tv?api_key=${TMDB_KEY}&query=${encodeURIComponent(query)}`);
+    const data = await res.json();
+    if (addShowStatus) addShowStatus.classList.add('hidden');
+    
+    if (!data.results || data.results.length === 0) {
+      if (addShowResults) {
+        addShowResults.innerHTML = `
+          <div class="add-show-placeholder">
+            <span class="placeholder-icon">🔍</span>
+            <p>No TV shows found matching "<strong>${escapeHtml(query)}</strong>"</p>
+          </div>
+        `;
+      }
+      return;
+    }
+
+    let html = '';
+    data.results.slice(0, 10).forEach(show => {
+      const isAlreadyAdded = globalShowsData.some(s => (s.id && s.id === show.id) || s.name.toLowerCase() === show.name.toLowerCase());
+      const posterUrl = show.poster_path ? `${IMAGE_BASE}${show.poster_path}` : 'https://via.placeholder.com/100x150?text=No+Poster';
+      const year = show.first_air_date ? show.first_air_date.split('-')[0] : '';
+      const country = show.origin_country && show.origin_country.length > 0 ? show.origin_country.join(', ') : '';
+      const rating = show.vote_average ? show.vote_average.toFixed(1) : null;
+      const overview = show.overview ? show.overview : 'No description available.';
+
+      html += `
+        <div class="search-result-card" data-show-id="${show.id}">
+          <img src="${posterUrl}" alt="${escapeHtml(show.name)}" class="search-result-poster" loading="lazy">
+          <div class="search-result-info">
+            <div class="search-result-header">
+              <h3 class="search-result-title">${escapeHtml(show.name)} ${year ? `<span class="search-result-year">(${year})</span>` : ''}</h3>
+              <div class="search-result-meta">
+                ${rating ? `<span class="meta-rating">★ ${rating}</span>` : ''}
+                ${country ? `<span class="meta-country">${country}</span>` : ''}
+              </div>
+            </div>
+            <p class="search-result-overview">${escapeHtml(overview)}</p>
+          </div>
+          <div class="search-result-action">
+            <button class="add-show-action-btn ${isAlreadyAdded ? 'added' : ''}" ${isAlreadyAdded ? 'disabled' : ''}>
+              ${isAlreadyAdded ? '✓ In Watchlist' : '+ Add'}
+            </button>
+          </div>
+        </div>
+      `;
+    });
+
+    if (addShowResults) {
+      addShowResults.innerHTML = html;
+
+      // Bind click handlers to buttons
+      const cards = addShowResults.querySelectorAll('.search-result-card');
+      cards.forEach((card, idx) => {
+        const showItem = data.results[idx];
+        const btn = card.querySelector('.add-show-action-btn');
+        if (btn && !btn.disabled) {
+          btn.addEventListener('click', () => {
+            handleAddShow(showItem, btn);
+          });
+        }
+      });
+    }
+  } catch (err) {
+    if (addShowStatus) addShowStatus.classList.add('hidden');
+    if (addShowResults) {
+      addShowResults.innerHTML = `<div class="add-show-placeholder"><p>Error searching shows. Please try again.</p></div>`;
+    }
+  }
+}
+
+async function handleAddShow(showItem, btnEl) {
+  if (btnEl) {
+    btnEl.disabled = true;
+    btnEl.textContent = 'Adding...';
+  }
+
+  try {
+    const cacheKey = `tmdb_cache_${showItem.name}`;
+    const fullShowData = await fetchShowData(showItem.name, cacheKey, showItem.id);
+    if (!fullShowData) throw new Error('Could not retrieve show details from TMDB.');
+
+    // Add to globalWatchList and globalShowsData if not present
+    if (!globalWatchList.includes(showItem.name)) {
+      globalWatchList.push(showItem.name);
+    }
+    const existingIndex = globalShowsData.findIndex(s => (s.id && s.id === showItem.id) || s.name.toLowerCase() === showItem.name.toLowerCase());
+    if (existingIndex >= 0) {
+      globalShowsData[existingIndex] = fullShowData;
+    } else {
+      globalShowsData.push(fullShowData);
+    }
+
+    // Invalidate local watchlist cache
+    localStorage.removeItem('tvshows_watchlist_cache');
+
+    // Automatically sync to Google Sheets if user is authenticated
+    if (currentUser) {
+      await syncWatchlistToSheet(false).catch(e => {
+        console.warn('Background sheet sync notice:', e);
+      });
+    }
+
+    // Re-render schedule / active view immediately
+    renderView();
+
+    // Show toast notification
+    showToast(`✨ Added "${showItem.name}" to your schedule!`);
+
+    if (btnEl) {
+      btnEl.textContent = '✓ Added';
+      btnEl.classList.add('added');
+    }
+  } catch (err) {
+    if (btnEl) {
+      btnEl.disabled = false;
+      btnEl.textContent = '+ Add';
+    }
+    showToast(`Failed to add show: ${err.message}`, 'error');
+  }
+}
+
+function showToast(message, type = 'success') {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+
+  const toast = document.createElement('div');
+  toast.className = `toast-item toast-${type}`;
+  toast.innerHTML = `
+    <span class="toast-icon">${type === 'error' ? '⚠️' : '✨'}</span>
+    <span class="toast-msg">${message}</span>
+  `;
+
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add('fade-out');
+    setTimeout(() => {
+      if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, 400);
+  }, 3500);
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 async function handleSync() {
   if (!currentUser) {
     alert("Admin authentication required. Please sign in with Google first.");
     return;
   }
+  await syncWatchlistToSheet(true);
+}
 
+async function syncWatchlistToSheet(showButtonFeedback = true) {
   const btn = document.getElementById('sync-btn');
-  btn.classList.add('loading');
-  btn.innerHTML = `<span class="sync-icon">⟳</span> Organizing...`;
+  if (showButtonFeedback && btn) {
+    btn.classList.add('loading');
+    btn.innerHTML = `<span class="sync-icon">⟳</span> Organizing...`;
+  }
   
   try {
     let current = [];
@@ -380,39 +626,46 @@ async function handleSync() {
     // Invalidate local watchlist cache so subsequent reloads pull fresh data
     localStorage.removeItem('tvshows_watchlist_cache');
     
-    // With 'no-cors', we cannot read the response, so if fetch didn't throw a network error, we assume success!
-    btn.innerHTML = `<span>✓</span> Organized!`;
-    setTimeout(() => {
+    if (showButtonFeedback && btn) {
+      btn.innerHTML = `<span>✓</span> Organized!`;
+      setTimeout(() => {
+        btn.classList.remove('loading');
+        btn.innerHTML = `<span class="sync-icon">⟳</span> Sync & Organize Spreadsheet`;
+      }, 3000);
+    }
+    return true;
+  } catch (err) {
+    if (showButtonFeedback && btn) {
+      alert("Failed to organize: " + err.message);
       btn.classList.remove('loading');
       btn.innerHTML = `<span class="sync-icon">⟳</span> Sync & Organize Spreadsheet`;
-    }, 3000);
-    
-  } catch (err) {
-    alert("Failed to organize: " + err.message);
-    btn.classList.remove('loading');
-    btn.innerHTML = `<span class="sync-icon">⟳</span> Sync & Organize Spreadsheet`;
+    }
+    throw err;
   }
 }
 
-async function fetchShowData(query, cacheKey) {
+async function fetchShowData(query, cacheKey, explicitId = null) {
   try {
-    // Search for the show
-    const searchRes = await fetch(`${TMDB_BASE}/search/tv?api_key=${TMDB_KEY}&query=${encodeURIComponent(query)}`);
-    const searchData = await searchRes.json();
+    let showId = explicitId;
     
-    if (!searchData.results || searchData.results.length === 0) return null;
-    
-    // Prioritize US versions of shows (like LEGO Masters US vs AU)
-    let bestMatch = searchData.results[0];
-    const usMatch = searchData.results.find(r => r.origin_country && r.origin_country.includes('US'));
-    
-    if (usMatch) {
-      if (usMatch.name.toLowerCase() === query.toLowerCase() || usMatch.name.toLowerCase() === bestMatch.name.toLowerCase()) {
-        bestMatch = usMatch;
+    if (!showId) {
+      // Search for the show
+      const searchRes = await fetch(`${TMDB_BASE}/search/tv?api_key=${TMDB_KEY}&query=${encodeURIComponent(query)}`);
+      const searchData = await searchRes.json();
+      
+      if (!searchData.results || searchData.results.length === 0) return null;
+      
+      // Prioritize US versions of shows (like LEGO Masters US vs AU)
+      let bestMatch = searchData.results[0];
+      const usMatch = searchData.results.find(r => r.origin_country && r.origin_country.includes('US'));
+      
+      if (usMatch) {
+        if (usMatch.name.toLowerCase() === query.toLowerCase() || usMatch.name.toLowerCase() === bestMatch.name.toLowerCase()) {
+          bestMatch = usMatch;
+        }
       }
+      showId = bestMatch.id;
     }
-    
-    const showId = bestMatch.id;
     
     // Fetch detailed show data
     const detailRes = await fetch(`${TMDB_BASE}/tv/${showId}?api_key=${TMDB_KEY}`);

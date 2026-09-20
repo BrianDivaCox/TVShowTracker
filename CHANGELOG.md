@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.4.0] - 2026-09-20
+
+### Added
+- **Add Show Button**: Added navbar button opening interactive show search modal.
+- **Live TMDB Search**: Instant show search with posters, ratings, and synopses.
+- **One-Click Watchlist Add**: Automatically adds shows to schedule and spreadsheet.
+- **Toast Notifications**: Added animated confirmation alerts for added shows.
+
+### Changed
+- Refined top navigation bar with compact search and controls.
+
 ## [1.3.4] - 2026-09-19
 
 ### Removed

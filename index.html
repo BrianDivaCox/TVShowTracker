@@ -28,9 +28,12 @@
       </div>
 
       <div class="navbar-right">
+        <button id="add-show-nav-btn" class="add-show-nav-btn" title="Add New TV Show">
+          <span class="plus-icon">+</span> Add Show
+        </button>
         <div class="search-container">
           <span class="search-icon">🔍</span>
-          <input type="text" id="search-input" placeholder="Search shows...">
+          <input type="text" id="search-input" placeholder="Filter shows...">
         </div>
         <button id="admin-toggle-btn" class="settings-icon-btn" title="Sync Settings">⚙️</button>
         <button id="mobile-menu-btn" class="icon-btn mobile-only" title="Menu">☰</button>
@@ -67,6 +70,39 @@
           <option value="date">Next Air Date</option>
           <option value="popularity">Popularity</option>
         </select>
+      </div>
+    </div>
+
+    <!-- Add Show Modal -->
+    <div id="add-show-modal" class="modal hidden">
+      <div class="modal-content modal-search-content">
+        <div class="modal-header">
+          <div class="modal-title-lock">
+            <span class="icon">✨</span>
+            <h2>Add TV Show</h2>
+          </div>
+          <button id="add-show-close-btn" class="close-icon-btn">×</button>
+        </div>
+
+        <div class="add-show-body">
+          <div class="add-show-search-bar">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="add-show-input" placeholder="Search show title (e.g. Severance, Fallout)..." autocomplete="off">
+            <button id="add-show-clear-btn" class="search-clear-btn hidden" title="Clear">✕</button>
+          </div>
+
+          <div id="add-show-status" class="add-show-status hidden">
+            <div class="spinner-small"></div>
+            <span>Searching TMDB...</span>
+          </div>
+
+          <div id="add-show-results" class="add-show-results">
+            <div class="add-show-placeholder">
+              <span class="placeholder-icon">📺</span>
+              <p>Type a show title above to search TMDB</p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     
@@ -128,12 +164,15 @@
         <p>Syncing schedule...</p>
       </div>
     </main>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="toast-container"></div>
     
     <footer>
-      <p>Data synced from Google Sheets | TV Show Tracker v1.3.4</p>
+      <p>Data synced from Google Sheets | TV Show Tracker v1.4.0</p>
     </footer>
   </div>
 
-  <script src="main.js?v=10" type="module"></script>
+  <script src="main.js?v=11" type="module"></script>
 </body>
 </html>
