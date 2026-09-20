@@ -1,0 +1,9 @@
+{
+  "version": "1.5.1",
+  "releaseDate": "2026-09-20",
+  "notes": [
+    "Automatic update detection popup with instant reload",
+    "Smart show status badges replacing returning series",
+    "October schedule intelligence and air date lookahead"
+  ]
+}

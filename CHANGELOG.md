@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.5.1] - 2026-09-20
+
+### Added
+- Added automated update detected popup with instant app reload.
+- Added background version synchronization and polling against version.json.
+
 ## [1.5.0] - 2026-09-20
 
 ### Added

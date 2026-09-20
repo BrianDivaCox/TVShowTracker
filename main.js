@@ -21,6 +21,103 @@ const TMDB_KEY = 'ab209bae2d49ee12d5a1f8601c11ef6a';
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 
+export const CURRENT_APP_VERSION = '1.5.1';
+
+// Version Comparison Helper
+function isNewerVersion(current, remote) {
+  if (!current || !remote) return false;
+  const cParts = current.replace(/^v/, '').split('.').map(n => parseInt(n, 10) || 0);
+  const rParts = remote.replace(/^v/, '').split('.').map(n => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(cParts.length, rParts.length); i++) {
+    const c = cParts[i] || 0;
+    const r = rParts[i] || 0;
+    if (r > c) return true;
+    if (r < c) return false;
+  }
+  return false;
+}
+
+// Render Animated Floating Update Banner
+function showUpdateBanner(updateData) {
+  if (document.getElementById('app-update-banner')) return;
+  
+  const dismissed = sessionStorage.getItem('dismissed_update_version');
+  if (dismissed === updateData.version) return;
+
+  const notesList = Array.isArray(updateData.notes) && updateData.notes.length > 0
+    ? updateData.notes.map(note => `<li>${note}</li>`).join('')
+    : '<li>Performance improvements & bug fixes</li>';
+
+  const banner = document.createElement('div');
+  banner.id = 'app-update-banner';
+  banner.className = 'app-update-banner';
+  banner.innerHTML = `
+    <div class="app-update-header">
+      <div class="app-update-title-wrap">
+        <span class="app-update-icon">🚀</span>
+        <div>
+          <div class="app-update-heading">App Update Available!</div>
+          <div class="app-update-subheading">New Version v${updateData.version} is ready</div>
+        </div>
+      </div>
+      <span class="app-update-version-pill">v${updateData.version}</span>
+    </div>
+    <div class="app-update-notes">
+      <ul>${notesList}</ul>
+    </div>
+    <div class="app-update-actions">
+      <button id="btn-force-update-app" class="btn-force-update-app">
+        ⚡ Update App Now
+      </button>
+      <button id="btn-dismiss-update-app" class="btn-dismiss-update-app">
+        Later
+      </button>
+    </div>
+  `;
+
+  document.body.appendChild(banner);
+  requestAnimationFrame(() => {
+    banner.classList.add('visible');
+  });
+
+  document.getElementById('btn-force-update-app').addEventListener('click', async () => {
+    localStorage.setItem('tvshows_app_version', updateData.version);
+    if ('caches' in window) {
+      try {
+        const keys = await caches.keys();
+        for (let k of keys) await caches.delete(k);
+      } catch (e) {}
+    }
+    window.location.href = window.location.pathname + '?v=' + Date.now() + window.location.hash;
+  });
+
+  document.getElementById('btn-dismiss-update-app').addEventListener('click', () => {
+    sessionStorage.setItem('dismissed_update_version', updateData.version);
+    banner.classList.remove('visible');
+    setTimeout(() => banner.remove(), 400);
+  });
+}
+
+// Background Version Checker
+async function checkAppVersion() {
+  try {
+    const res = await fetch(`./version.json?t=${Date.now()}`, { cache: 'no-store' }).catch(() => null);
+    if (!res || !res.ok) return;
+    const data = await res.json();
+    if (data && data.version) {
+      if (isNewerVersion(CURRENT_APP_VERSION, data.version)) {
+        showUpdateBanner(data);
+      } else {
+        localStorage.setItem('tvshows_app_version', data.version);
+      }
+    }
+  } catch (err) {}
+}
+
+window.checkAppVersion = checkAppVersion;
+window.showUpdateBanner = showUpdateBanner;
+window.CURRENT_APP_VERSION = CURRENT_APP_VERSION;
+
 let globalWatchList = [];
 let sheetCategoryMap = {};
 let globalShowsData = [];
@@ -248,8 +345,13 @@ async function init() {
     
     // 4. Render Initial View
     renderView();
+
+    // 5. Version Check & Real-time Update Detection
+    checkAppVersion();
+    setInterval(checkAppVersion, 5 * 60 * 1000);
+    window.addEventListener('focus', checkAppVersion);
     
-    // 5. Setup Admin Modal & Firebase Google Auth
+    // 6. Setup Admin Modal & Firebase Google Auth
     const adminModal = document.getElementById('admin-modal');
     document.getElementById('admin-toggle-btn').addEventListener('click', () => {
       adminModal.classList.remove('hidden');
