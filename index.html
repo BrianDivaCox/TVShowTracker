@@ -74,17 +74,58 @@
     <div id="admin-modal" class="modal hidden">
       <div class="modal-content">
         <div class="modal-header">
-          <h2>Admin Panel</h2>
+          <div class="modal-title-lock">
+            <span class="lock-icon">🔒</span>
+            <h2>Admin Security Panel</h2>
+          </div>
           <button id="admin-close-btn" class="close-icon-btn">×</button>
         </div>
-        <div class="modal-body">
-          <p class="modal-desc">Keep your Google Sheet organized and up to date.</p>
-          <div class="admin-actions">
-            <button id="sync-btn" class="sync-btn">
-              <span class="sync-icon">⟳</span> Sync & Organize Spreadsheet
-            </button>
+
+        <!-- Logged Out State -->
+        <div id="admin-logged-out" class="admin-state-view">
+          <div class="security-banner">
+            <div class="shield-badge">🛡️</div>
+            <h3>Authentication Required</h3>
+            <p>Admin spreadsheet sync and organization controls are restricted to authorized administrators.</p>
           </div>
-          <p class="modal-hint">Clicking this will check the status of all your shows on TMDB and automatically move them into the correct Current, Hiatus, or Cancelled columns in your Google Sheet.</p>
+          <div class="admin-auth-actions">
+            <button id="google-signin-btn" class="google-signin-btn">
+              <svg class="google-icon" viewBox="0 0 24 24" width="20" height="20">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+              </svg>
+              <span>Sign in with Google</span>
+            </button>
+            <div id="auth-status-msg" class="auth-status-msg hidden"></div>
+          </div>
+          <p class="modal-hint">Protected with Firebase Authentication to prevent API spam and Google Sheets quota lockouts.</p>
+        </div>
+
+        <!-- Logged In State -->
+        <div id="admin-logged-in" class="admin-state-view hidden">
+          <div class="admin-user-bar">
+            <img id="admin-user-photo" class="admin-avatar" src="" alt="Admin">
+            <div class="admin-user-details">
+              <div class="admin-name-row">
+                <span id="admin-user-name" class="admin-user-name">Admin</span>
+                <span class="verified-badge">✓ Verified</span>
+              </div>
+              <span id="admin-user-email" class="admin-user-email">email@example.com</span>
+            </div>
+            <button id="admin-signout-btn" class="signout-btn" title="Sign Out">Sign Out</button>
+          </div>
+
+          <div class="admin-actions-section">
+            <p class="modal-desc">Spreadsheet Management & Automation:</p>
+            <div class="admin-actions">
+              <button id="sync-btn" class="sync-btn full-width">
+                <span class="sync-icon">⟳</span> Sync & Organize Spreadsheet
+              </button>
+            </div>
+            <p class="modal-hint">Checks all shows on TMDB and automatically sorts them into Current, Hiatus, or Cancelled columns in your Google Sheet.</p>
+          </div>
         </div>
       </div>
     </div>
@@ -97,10 +138,10 @@
     </main>
     
     <footer>
-      <p>Data synced from Google Sheets | TV Show Tracker v1.2.1</p>
+      <p>Data synced from Google Sheets | TV Show Tracker v1.3.0</p>
     </footer>
   </div>
 
-  <script src="main.js?v=5" type="module"></script>
+  <script src="main.js?v=6" type="module"></script>
 </body>
 </html>

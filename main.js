@@ -1,3 +1,21 @@
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBuw51XRkUz5sbr-i8DKiGUgMpAPSiR-vs",
+  authDomain: "wos-dashboard-38d4c.firebaseapp.com",
+  projectId: "wos-dashboard-38d4c",
+  storageBucket: "wos-dashboard-38d4c.firebasestorage.app",
+  messagingSenderId: "1041082078621",
+  appId: "1:1041082078621:web:9cce2bb45b76fb86404b74"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const provider = new GoogleAuthProvider();
+
+let currentUser = null;
+
 const SHEET_URL = 'https://script.google.com/macros/s/AKfycbxWTdLR5Y5guXF5pCW-hhZW42XD_EoBu7hQI3bhAwUiqwHmXvWoCWN-zYKUsgfOz2Y/exec?sheet=data';
 const TMDB_KEY = 'ab209bae2d49ee12d5a1f8601c11ef6a';
 const TMDB_BASE = 'https://api.themoviedb.org/3';
@@ -26,12 +44,36 @@ window.toggleWatched = function(showId, season, ep) {
 async function init() {
   renderLoading("Syncing with your Watchlist...");
   try {
-    // 1. Fetch Watchlist from Google Sheets
-    const sheetResponse = await fetch(SHEET_URL).catch(e => {
-      throw new Error("Failed to connect to Google Sheets. " + e.message);
-    });
-    const sheetResult = await sheetResponse.json();
-    if (sheetResult.error) throw new Error(sheetResult.error);
+    // 1. Fetch Watchlist from Google Sheets (with 12-hour client caching to protect quota)
+    let sheetResult = null;
+    const cachedWatchlist = localStorage.getItem('tvshows_watchlist_cache');
+    if (cachedWatchlist) {
+      try {
+        const parsed = JSON.parse(cachedWatchlist);
+        if (Date.now() - parsed.timestamp < 12 * 60 * 60 * 1000 && parsed.data) {
+          sheetResult = parsed.data;
+        }
+      } catch (e) {
+        console.warn("Watchlist cache parse error:", e);
+      }
+    }
+
+    if (!sheetResult) {
+      const sheetResponse = await fetch(SHEET_URL).catch(e => {
+        throw new Error("Failed to connect to Google Sheets. " + e.message);
+      });
+      sheetResult = await sheetResponse.json();
+      if (sheetResult.error) throw new Error(sheetResult.error);
+
+      try {
+        localStorage.setItem('tvshows_watchlist_cache', JSON.stringify({
+          timestamp: Date.now(),
+          data: sheetResult
+        }));
+      } catch (e) {
+        console.warn("Failed to store watchlist cache:", e);
+      }
+    }
     
     // Check if the user has organized it into 3 columns yet
     let watchList = [];
@@ -192,7 +234,7 @@ async function init() {
     // 4. Render Initial View
     renderView();
     
-    // 5. Setup Admin Modal
+    // 5. Setup Admin Modal & Firebase Google Auth
     const adminModal = document.getElementById('admin-modal');
     document.getElementById('admin-toggle-btn').addEventListener('click', () => {
       adminModal.classList.remove('hidden');
@@ -205,16 +247,87 @@ async function init() {
         adminModal.classList.add('hidden');
       }
     });
+
+    const googleSignInBtn = document.getElementById('google-signin-btn');
+    const authStatusMsg = document.getElementById('auth-status-msg');
+    if (googleSignInBtn) {
+      googleSignInBtn.addEventListener('click', async () => {
+        try {
+          googleSignInBtn.disabled = true;
+          if (authStatusMsg) {
+            authStatusMsg.textContent = 'Opening Google Sign-In...';
+            authStatusMsg.className = 'auth-status-msg info';
+          }
+          await signInWithPopup(auth, provider);
+        } catch (err) {
+          console.error("Google Auth error:", err);
+          if (authStatusMsg) {
+            authStatusMsg.textContent = err.message || 'Failed to sign in with Google.';
+            authStatusMsg.className = 'auth-status-msg error';
+          }
+        } finally {
+          googleSignInBtn.disabled = false;
+        }
+      });
+    }
+
+    const signoutBtn = document.getElementById('admin-signout-btn');
+    if (signoutBtn) {
+      signoutBtn.addEventListener('click', async () => {
+        try {
+          await signOut(auth);
+        } catch (err) {
+          console.error("Signout error:", err);
+        }
+      });
+    }
+
+    onAuthStateChanged(auth, (user) => {
+      currentUser = user;
+      updateAdminAuthUI(user);
+    });
     
     // 6. Setup Sync Button inside Admin Modal
-    document.getElementById('sync-btn').addEventListener('click', handleSync);
+    const syncBtn = document.getElementById('sync-btn');
+    if (syncBtn) {
+      syncBtn.addEventListener('click', handleSync);
+    }
     
   } catch (err) {
     document.getElementById('calendar-container').innerHTML = `<div class="error-state"><h3>Oops!</h3><p>${err.message}</p></div>`;
   }
 }
 
+function updateAdminAuthUI(user) {
+  const loggedOutView = document.getElementById('admin-logged-out');
+  const loggedInView = document.getElementById('admin-logged-in');
+  const userPhoto = document.getElementById('admin-user-photo');
+  const userName = document.getElementById('admin-user-name');
+  const userEmail = document.getElementById('admin-user-email');
+  const authStatusMsg = document.getElementById('auth-status-msg');
+
+  if (user) {
+    if (loggedOutView) loggedOutView.classList.add('hidden');
+    if (loggedInView) loggedInView.classList.remove('hidden');
+    if (userPhoto) userPhoto.src = user.photoURL || 'https://via.placeholder.com/42';
+    if (userName) userName.textContent = user.displayName || 'Administrator';
+    if (userEmail) userEmail.textContent = user.email || '';
+    if (authStatusMsg) {
+      authStatusMsg.textContent = '';
+      authStatusMsg.className = 'auth-status-msg hidden';
+    }
+  } else {
+    if (loggedOutView) loggedOutView.classList.remove('hidden');
+    if (loggedInView) loggedInView.classList.add('hidden');
+  }
+}
+
 async function handleSync() {
+  if (!currentUser) {
+    alert("Admin authentication required. Please sign in with Google first.");
+    return;
+  }
+
   const btn = document.getElementById('sync-btn');
   btn.classList.add('loading');
   btn.innerHTML = `<span class="sync-icon">⟳</span> Organizing...`;
@@ -259,6 +372,9 @@ async function handleSync() {
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({ data: rows })
     });
+    
+    // Invalidate local watchlist cache so subsequent reloads pull fresh data
+    localStorage.removeItem('tvshows_watchlist_cache');
     
     // With 'no-cors', we cannot read the response, so if fetch didn't throw a network error, we assume success!
     btn.innerHTML = `<span>✓</span> Organized!`;

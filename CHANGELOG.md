@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0] - 2026-09-19
+
+### Added
+- **Google Sign-In**: Integrated Firebase Authentication for admin panel access.
+- **Admin Verification**: Displays administrator profile, avatar, and verified badge.
+- **Spreadsheet Quota Shield**: Added 12-hour client caching for Google Sheets reads.
+- **Gated Spreadsheet Sync**: Restricts organization POST actions to authenticated administrators.
+
+### Changed
+- Upgraded Admin Panel with modern security dialog and sign-out.
+- Automated cache invalidation on successful spreadsheet sync operations.
+
 ## [1.2.1] - 2026-09-19
 
 ### Added
