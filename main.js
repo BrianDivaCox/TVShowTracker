@@ -142,10 +142,7 @@ async function init() {
         }
         
         needsApiDelay = true; // We actually hit the network, so we must delay
-        return fetchShowData(query, cacheKey).catch(e => {
-          console.error("TMDB error for " + query, e);
-          return null; // Ignore individual TMDB failures
-        });
+        return fetchShowData(query, cacheKey).catch(() => null);
       });
       
       const batchResults = await Promise.all(batchPromises);
@@ -442,7 +439,7 @@ async function fetchShowData(query, cacheKey) {
           showData.current_season_episodes = seasonData.episodes || [];
         }
       } catch (seasonErr) {
-        console.warn(`Could not fetch season ${targetSeason} for ${showData.name}:`, seasonErr);
+        // Fallback gracefully without throwing
       }
     }
     
@@ -454,7 +451,6 @@ async function fetchShowData(query, cacheKey) {
     
     return showData;
   } catch (e) {
-    console.error(`Failed to fetch TMDB data for ${query}:`, e);
     return null;
   }
 }

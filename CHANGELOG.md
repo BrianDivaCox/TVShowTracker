@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.3.4] - 2026-09-19
+
+### Removed
+- Purged obsolete legacy test files and series data dumps.
+- Removed noisy console error logging across TMDB data fetchers.
+
 ## [1.3.3] - 2026-09-19
 
 ### Changed
