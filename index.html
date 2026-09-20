@@ -20,7 +20,7 @@
     </header>
 
     <nav id="app-tabs" class="app-tabs">
-      <button class="tab-btn active" data-tab="schedule">Weekly Schedule</button>
+      <button class="tab-btn active" data-tab="schedule">Schedule</button>
       <button class="tab-btn" data-tab="current">Current</button>
       <button class="tab-btn" data-tab="hiatus">Hiatus</button>
       <button class="tab-btn" data-tab="cancelled">Archive</button>
@@ -33,6 +33,21 @@
         <span class="search-icon">🔍</span>
         <input type="text" id="search-input" placeholder="Search shows...">
       </div>
+
+      <div class="schedule-controls" id="schedule-controls">
+        <div class="date-nav">
+          <button id="schedule-prev-btn" class="nav-btn" title="Previous Range">‹</button>
+          <button id="schedule-today-btn" class="nav-btn today-btn" title="Current Range">Today</button>
+          <span id="schedule-range-label" class="range-label">This Week</span>
+          <button id="schedule-next-btn" class="nav-btn" title="Next Range">›</button>
+        </div>
+        <div class="scope-switcher" id="scope-switcher">
+          <button class="scope-btn active" data-scope="1week">1 Week</button>
+          <button class="scope-btn" data-scope="2week">2 Weeks</button>
+          <button class="scope-btn" data-scope="month">Month</button>
+        </div>
+      </div>
+
       <div class="sort-container hidden" id="sort-container">
         <span class="sort-icon">⇅</span>
         <select id="sort-select">
@@ -70,10 +85,10 @@
     </main>
     
     <footer>
-      <p>Data synced from Google Sheets | TV Show Tracker v1.1.0</p>
+      <p>Data synced from Google Sheets | TV Show Tracker v1.2.0</p>
     </footer>
   </div>
 
-  <script src="main.js?v=3" type="module"></script>
+  <script src="main.js?v=4" type="module"></script>
 </body>
 </html>

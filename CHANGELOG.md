@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.0] - 2026-09-19
+
+### Added
+- **2-Week Schedule View**: View two stacked weekly rows of upcoming show episodes.
+- **Full Monthly Calendar**: Explore all airing episodes in a clean monthly grid.
+- **Schedule Scope Switcher**: Easily switch between 1-Week, 2-Weeks, and Monthly views.
+- **Interactive Date Navigation**: Browse previous and future weeks or months with ease.
+- **Season Episode Caching**: Fast loading multi-week schedules with cached season data.
+
+### Changed
+- Re-labeled the main navigation tab to Schedule.
+- Enhanced mobile and tablet responsiveness across all calendar views.
+
 ## [1.1.0] - 2026-07-06
 
 ### Added

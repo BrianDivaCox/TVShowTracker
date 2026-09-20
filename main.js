@@ -8,6 +8,8 @@ let globalShowsData = [];
 let currentTab = 'schedule';
 let searchQuery = '';
 let currentSort = 'alpha';
+let currentScope = '1week'; // '1week', '2week', 'month'
+let currentOffset = 0; // navigation offset relative to today
 let watchedHistory = JSON.parse(localStorage.getItem('tvshows-watched')) || {};
 
 window.toggleWatched = function(showId, season, ep) {
@@ -86,10 +88,14 @@ async function init() {
         const cacheKey = `tmdb_cache_${query}`;
         const cached = localStorage.getItem(cacheKey);
         if (cached) {
-          const parsed = JSON.parse(cached);
-          // Check if cache is less than 24 hours old
-          if (Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) {
-            return parsed.data; // Return instantly from cache!
+          try {
+            const parsed = JSON.parse(cached);
+            // Check if cache is less than 24 hours old
+            if (Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000 && parsed.data) {
+              return parsed.data; // Return instantly from cache!
+            }
+          } catch (e) {
+            // Ignore parse errors and re-fetch
           }
         }
         
@@ -144,6 +150,44 @@ async function init() {
       currentSort = e.target.value;
       renderView();
     });
+
+    // Setup Schedule Scope Switcher (1 Week / 2 Weeks / Month)
+    const scopeBtns = document.querySelectorAll('.scope-btn');
+    scopeBtns.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        scopeBtns.forEach(b => b.classList.remove('active'));
+        e.target.classList.add('active');
+        currentScope = e.target.getAttribute('data-scope');
+        currentOffset = 0; // reset offset when switching scopes
+        renderView();
+      });
+    });
+
+    // Setup Date Navigation (Prev, Next, Today)
+    const prevBtn = document.getElementById('schedule-prev-btn');
+    const nextBtn = document.getElementById('schedule-next-btn');
+    const todayBtn = document.getElementById('schedule-today-btn');
+
+    if (prevBtn) {
+      prevBtn.addEventListener('click', () => {
+        currentOffset--;
+        renderView();
+      });
+    }
+
+    if (nextBtn) {
+      nextBtn.addEventListener('click', () => {
+        currentOffset++;
+        renderView();
+      });
+    }
+
+    if (todayBtn) {
+      todayBtn.addEventListener('click', () => {
+        currentOffset = 0;
+        renderView();
+      });
+    }
     
     // 4. Render Initial View
     renderView();
@@ -162,7 +206,7 @@ async function init() {
       }
     });
     
-    // 5. Setup Sync Button inside Admin Modal
+    // 6. Setup Sync Button inside Admin Modal
     document.getElementById('sync-btn').addEventListener('click', handleSync);
     
   } catch (err) {
@@ -243,7 +287,6 @@ async function fetchShowData(query, cacheKey) {
     const usMatch = searchData.results.find(r => r.origin_country && r.origin_country.includes('US'));
     
     if (usMatch) {
-      // Only override if the US match has the exact same name or is a very close match
       if (usMatch.name.toLowerCase() === query.toLowerCase() || usMatch.name.toLowerCase() === bestMatch.name.toLowerCase()) {
         bestMatch = usMatch;
       }
@@ -254,6 +297,31 @@ async function fetchShowData(query, cacheKey) {
     // Fetch detailed show data
     const detailRes = await fetch(`${TMDB_BASE}/tv/${showId}?api_key=${TMDB_KEY}`);
     const showData = await detailRes.json();
+    
+    // Fetch current season episodes to support multi-week & monthly schedules
+    let targetSeason = null;
+    if (showData.next_episode_to_air && showData.next_episode_to_air.season_number) {
+      targetSeason = showData.next_episode_to_air.season_number;
+    } else if (showData.last_episode_to_air && showData.last_episode_to_air.season_number) {
+      targetSeason = showData.last_episode_to_air.season_number;
+    } else if (Array.isArray(showData.seasons) && showData.seasons.length > 0) {
+      const regSeasons = showData.seasons.filter(s => s.season_number > 0);
+      if (regSeasons.length > 0) {
+        targetSeason = regSeasons[regSeasons.length - 1].season_number;
+      }
+    }
+    
+    if (targetSeason !== null && targetSeason !== undefined) {
+      try {
+        const seasonRes = await fetch(`${TMDB_BASE}/tv/${showId}/season/${targetSeason}?api_key=${TMDB_KEY}`);
+        if (seasonRes.ok) {
+          const seasonData = await seasonRes.json();
+          showData.current_season_episodes = seasonData.episodes || [];
+        }
+      } catch (seasonErr) {
+        console.warn(`Could not fetch season ${targetSeason} for ${showData.name}:`, seasonErr);
+      }
+    }
     
     // Save to Cache
     localStorage.setItem(cacheKey, JSON.stringify({
@@ -282,12 +350,15 @@ function renderView() {
   container.innerHTML = '';
   
   const sortContainer = document.getElementById('sort-container');
+  const scheduleControls = document.getElementById('schedule-controls');
   
   if (currentTab === 'schedule') {
-    sortContainer.classList.add('hidden');
+    if (sortContainer) sortContainer.classList.add('hidden');
+    if (scheduleControls) scheduleControls.classList.remove('hidden');
     renderCalendarView(container);
   } else {
-    sortContainer.classList.remove('hidden');
+    if (sortContainer) sortContainer.classList.remove('hidden');
+    if (scheduleControls) scheduleControls.classList.add('hidden');
     renderGridView(container);
   }
 }
@@ -352,7 +423,71 @@ function renderGridView(container) {
   container.innerHTML = html;
 }
 
+// Extract all episodes for a show that fall into a specific date range
+function getShowEpisodesInRange(show, startDate, endDate) {
+  const episodes = [];
+  const addedKeys = new Set();
+  
+  const addEpIfInRange = (ep) => {
+    if (!ep || !ep.air_date) return;
+    const key = `S${ep.season_number}E${ep.episode_number}-${ep.air_date}`;
+    if (addedKeys.has(key)) return;
+    
+    const epDate = new Date(ep.air_date + 'T00:00:00');
+    if (epDate >= startDate && epDate <= endDate) {
+      addedKeys.add(key);
+      episodes.push({
+        show,
+        episode: ep,
+        dateObj: epDate
+      });
+    }
+  };
+
+  if (Array.isArray(show.current_season_episodes) && show.current_season_episodes.length > 0) {
+    show.current_season_episodes.forEach(addEpIfInRange);
+  }
+  
+  if (show.next_episode_to_air) addEpIfInRange(show.next_episode_to_air);
+  if (show.last_episode_to_air) addEpIfInRange(show.last_episode_to_air);
+
+  return episodes;
+}
+
 function renderCalendarView(container) {
+  const today = new Date();
+  
+  if (currentScope === 'month') {
+    renderMonthView(container, today);
+  } else if (currentScope === '2week') {
+    render2WeekView(container, today);
+  } else {
+    render1WeekView(container, today);
+  }
+}
+
+// 1-Week Schedule Renderer
+function render1WeekView(container, today) {
+  const currentDay = today.getDay();
+  const diffToMonday = today.getDate() - currentDay + (currentDay === 0 ? -6 : 1) + (currentOffset * 7);
+  
+  const startOfWeek = new Date(today.getFullYear(), today.getMonth(), diffToMonday, 0, 0, 0, 0);
+  const endOfWeek = new Date(startOfWeek);
+  endOfWeek.setDate(startOfWeek.getDate() + 6);
+  endOfWeek.setHours(23, 59, 59, 999);
+
+  // Update Range Label
+  const rangeLabel = document.getElementById('schedule-range-label');
+  if (rangeLabel) {
+    const startStr = startOfWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const endStr = endOfWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: startOfWeek.getFullYear() !== endOfWeek.getFullYear() ? 'numeric' : undefined });
+    if (currentOffset === 0) {
+      rangeLabel.textContent = `This Week (${startStr} – ${endStr})`;
+    } else {
+      rangeLabel.textContent = `${startStr} – ${endStr}`;
+    }
+  }
+
   const days = [
     { name: 'Monday', id: 1, shows: [] },
     { name: 'Tuesday', id: 2, shows: [] },
@@ -360,136 +495,40 @@ function renderCalendarView(container) {
     { name: 'Thursday', id: 4, shows: [] },
     { name: 'Friday', id: 5, shows: [] },
     { name: 'Saturday', id: 6, shows: [] },
-    { name: 'Sunday', id: 0, shows: [] } // Date.getDay() returns 0 for Sunday
+    { name: 'Sunday', id: 0, shows: [] }
   ];
-  
-  const tbaShows = [];
-  
-  // Calculate the start (Monday) and end (Sunday) of the current week
-  const today = new Date();
-  const currentDay = today.getDay();
-  const diffToMonday = today.getDate() - currentDay + (currentDay === 0 ? -6 : 1); // adjust when day is Sunday
-  
-  const startOfWeek = new Date(today);
-  startOfWeek.setDate(diffToMonday);
-  startOfWeek.setHours(0, 0, 0, 0);
-  
-  const endOfWeek = new Date(startOfWeek);
-  endOfWeek.setDate(startOfWeek.getDate() + 6);
-  endOfWeek.setHours(23, 59, 59, 999);
 
-  // Sort shows into days
+  // Collect matching episodes
   globalShowsData.forEach(show => {
-    // Search Filter
-    if (searchQuery && !show.name.toLowerCase().includes(searchQuery)) {
-      return;
-    }
-    
-    // If it's cancelled, we don't render it at all!
+    if (searchQuery && !show.name.toLowerCase().includes(searchQuery)) return;
     let status = (show.status || '').toLowerCase();
-    if (status === 'canceled' || status === 'ended') {
-      return; 
-    }
-    
-    const nextEp = show.next_episode_to_air;
-    const lastEp = show.last_episode_to_air;
-    
-    let activeEp = null;
-    let airDateObj = null;
-    
-    // 1. Check if the NEXT episode is airing this week
-    if (nextEp && nextEp.air_date) {
-      let d = new Date(nextEp.air_date + 'T00:00:00');
-      if (d >= startOfWeek && d <= endOfWeek) {
-        activeEp = nextEp;
-        airDateObj = d;
-      }
-    }
-    
-    // 2. If not, check if the LAST episode aired this week (e.g. if today is Wed and it aired Mon)
-    if (!activeEp && lastEp && lastEp.air_date) {
-      let d = new Date(lastEp.air_date + 'T00:00:00');
-      if (d >= startOfWeek && d <= endOfWeek) {
-        activeEp = lastEp;
-        airDateObj = d;
-      }
-    }
-    
-    if (activeEp && airDateObj) {
-      const dayOfWeek = airDateObj.getDay();
+    if (status === 'canceled' || status === 'ended') return;
+
+    const matchedEps = getShowEpisodesInRange(show, startOfWeek, endOfWeek);
+    matchedEps.forEach(item => {
+      const dayOfWeek = item.dateObj.getDay();
       const targetDay = days.find(d => d.id === dayOfWeek);
       if (targetDay) {
-        targetDay.shows.push({
-          show: show,
-          episode: activeEp,
-          dateObj: airDateObj
-        });
+        targetDay.shows.push(item);
       }
-    }
+    });
   });
-  
-  // Build HTML
+
   let html = `<div class="calendar-grid">`;
-  
   days.forEach(day => {
-    // Sort shows on this day by air date (closest first)
     day.shows.sort((a, b) => a.dateObj - b.dateObj);
     
-    // Calculate the actual date for this column
     const columnDate = new Date(startOfWeek);
     const dayOffset = day.id === 0 ? 6 : day.id - 1;
     columnDate.setDate(columnDate.getDate() + dayOffset);
     const dateString = columnDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     
-    let showsHtml = '';
-    
-    if (day.shows.length === 0) {
-      showsHtml = `<div class="no-shows">Nothing scheduled</div>`;
-    } else {
-      day.shows.forEach(item => {
-        const posterUrl = item.show.backdrop_path ? `${IMAGE_BASE}${item.show.backdrop_path}` : (item.show.poster_path ? `${IMAGE_BASE}${item.show.poster_path}` : 'https://via.placeholder.com/500x281?text=No+Image');
-        const epStr = `S${item.episode.season_number.toString().padStart(2, '0')} E${item.episode.episode_number.toString().padStart(2, '0')}`;
-        
-        // Format date nicely (e.g. Oct 15)
-        const dateStr = item.dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-        
-        const isPremiere = item.episode.episode_number === 1;
-        const isFinale = item.episode.episode_type === 'finale';
-        
-        let badgeHtml = '';
-        if (isPremiere) {
-          badgeHtml = `<div class="badge-soon">Season Premiere</div>`;
-        } else if (isFinale) {
-          badgeHtml = `<div class="badge-soon" style="background: #f59e0b; box-shadow: 0 2px 8px rgba(245, 158, 11, 0.5);">Season Finale</div>`;
-        }
-        
-        const epKey = `${item.show.tmdb_id}-S${item.episode.season_number}E${item.episode.episode_number}`;
-        const isWatched = !!watchedHistory[epKey];
-        
-        showsHtml += `
-          <div class="poster-card ${badgeHtml ? 'airing-soon' : ''} ${isWatched ? 'watched-card' : ''}">
-            <div class="poster-img-container">
-              <img src="${posterUrl}" alt="${item.show.name}" class="poster-img" loading="lazy">
-              ${badgeHtml}
-            </div>
-            <div class="poster-info">
-              <h3 class="poster-title">${item.show.name}</h3>
-              <div class="poster-meta">
-                <span class="ep-badge">${epStr}</span>
-                <span class="ep-date">${dateStr}</span>
-                <button class="watch-btn ${isWatched ? 'watched-btn-active' : ''}" onclick="toggleWatched(${item.show.tmdb_id}, ${item.episode.season_number}, ${item.episode.episode_number})">
-                  ${isWatched ? '✔' : '○'}
-                </button>
-              </div>
-            </div>
-          </div>
-        `;
-      });
-    }
-    
+    const isToday = columnDate.toDateString() === today.toDateString();
+    let showsHtml = renderDayCardsHtml(day.shows);
+
     html += `
-      <div class="day-col">
-        <div class="day-header">
+      <div class="day-col ${isToday ? 'current-day-col' : ''}">
+        <div class="day-header ${isToday ? 'today-highlight' : ''}">
           <h2>${day.name}</h2>
           <span class="day-date">${dateString}</span>
         </div>
@@ -499,9 +538,289 @@ function renderCalendarView(container) {
       </div>
     `;
   });
-  
   html += `</div>`;
+  container.innerHTML = html;
+}
+
+// 2-Week Schedule Renderer (Stacked 7-day rows)
+function render2WeekView(container, today) {
+  const currentDay = today.getDay();
+  const diffToMonday = today.getDate() - currentDay + (currentDay === 0 ? -6 : 1) + (currentOffset * 14);
   
+  const startOf2Weeks = new Date(today.getFullYear(), today.getMonth(), diffToMonday, 0, 0, 0, 0);
+  const endOf2Weeks = new Date(startOf2Weeks);
+  endOf2Weeks.setDate(startOf2Weeks.getDate() + 13);
+  endOf2Weeks.setHours(23, 59, 59, 999);
+
+  // Update Range Label
+  const rangeLabel = document.getElementById('schedule-range-label');
+  if (rangeLabel) {
+    const startStr = startOf2Weeks.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const endStr = endOf2Weeks.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    if (currentOffset === 0) {
+      rangeLabel.textContent = `2 Weeks (${startStr} – ${endStr})`;
+    } else {
+      rangeLabel.textContent = `${startStr} – ${endStr}`;
+    }
+  }
+
+  // Define Week 1 & Week 2
+  const weeks = [
+    { name: 'Week 1', startOffset: 0, days: [] },
+    { name: 'Week 2', startOffset: 7, days: [] }
+  ];
+
+  weeks.forEach(w => {
+    const weekStart = new Date(startOf2Weeks);
+    weekStart.setDate(weekStart.getDate() + w.startOffset);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    weekEnd.setHours(23, 59, 59, 999);
+    
+    w.startDate = weekStart;
+    w.endDate = weekEnd;
+    
+    const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    w.days = dayNames.map((name, idx) => {
+      const dayDate = new Date(weekStart);
+      dayDate.setDate(weekStart.getDate() + idx);
+      return {
+        name,
+        dateObj: dayDate,
+        dateString: dayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        isToday: dayDate.toDateString() === today.toDateString(),
+        shows: []
+      };
+    });
+  });
+
+  // Distribute shows into weeks & days
+  globalShowsData.forEach(show => {
+    if (searchQuery && !show.name.toLowerCase().includes(searchQuery)) return;
+    let status = (show.status || '').toLowerCase();
+    if (status === 'canceled' || status === 'ended') return;
+
+    const matchedEps = getShowEpisodesInRange(show, startOf2Weeks, endOf2Weeks);
+    matchedEps.forEach(item => {
+      const itemDateStr = item.dateObj.toDateString();
+      weeks.forEach(w => {
+        const targetDay = w.days.find(d => d.dateObj.toDateString() === itemDateStr);
+        if (targetDay) {
+          targetDay.shows.push(item);
+        }
+      });
+    });
+  });
+
+  let html = `<div class="two-week-container">`;
+  weeks.forEach(w => {
+    const wStartStr = w.startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const wEndStr = w.endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    
+    html += `
+      <div class="week-section">
+        <div class="week-row-header">
+          <span class="week-title">${w.name}:</span>
+          <span class="week-range">${wStartStr} – ${wEndStr}</span>
+        </div>
+        <div class="calendar-grid">
+    `;
+
+    w.days.forEach(day => {
+      day.shows.sort((a, b) => a.dateObj - b.dateObj);
+      let showsHtml = renderDayCardsHtml(day.shows);
+
+      html += `
+        <div class="day-col ${day.isToday ? 'current-day-col' : ''}">
+          <div class="day-header ${day.isToday ? 'today-highlight' : ''}">
+            <h2>${day.name}</h2>
+            <span class="day-date">${day.dateString}</span>
+          </div>
+          <div class="day-content">
+            ${showsHtml}
+          </div>
+        </div>
+      `;
+    });
+
+    html += `
+        </div>
+      </div>
+    `;
+  });
+  html += `</div>`;
+
+  container.innerHTML = html;
+}
+
+// Helper to render standard poster cards for a day column
+function renderDayCardsHtml(showsList) {
+  if (!showsList || showsList.length === 0) {
+    return `<div class="no-shows">Nothing scheduled</div>`;
+  }
+
+  let showsHtml = '';
+  showsList.forEach(item => {
+    const showId = item.show.id || item.show.tmdb_id;
+    const posterUrl = item.show.backdrop_path ? `${IMAGE_BASE}${item.show.backdrop_path}` : (item.show.poster_path ? `${IMAGE_BASE}${item.show.poster_path}` : 'https://via.placeholder.com/500x281?text=No+Image');
+    const epStr = `S${item.episode.season_number.toString().padStart(2, '0')} E${item.episode.episode_number.toString().padStart(2, '0')}`;
+    const dateStr = item.dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    
+    const isPremiere = item.episode.episode_number === 1;
+    const isFinale = item.episode.episode_type === 'finale';
+    
+    let badgeHtml = '';
+    if (isPremiere) {
+      badgeHtml = `<div class="badge-soon">Season Premiere</div>`;
+    } else if (isFinale) {
+      badgeHtml = `<div class="badge-soon" style="background: #f59e0b; box-shadow: 0 2px 8px rgba(245, 158, 11, 0.5);">Season Finale</div>`;
+    }
+    
+    const epKey = `${showId}-S${item.episode.season_number}E${item.episode.episode_number}`;
+    const isWatched = !!watchedHistory[epKey];
+    
+    showsHtml += `
+      <div class="poster-card ${badgeHtml ? 'airing-soon' : ''} ${isWatched ? 'watched-card' : ''}">
+        <div class="poster-img-container">
+          <img src="${posterUrl}" alt="${item.show.name}" class="poster-img" loading="lazy">
+          ${badgeHtml}
+        </div>
+        <div class="poster-info">
+          <h3 class="poster-title">${item.show.name}</h3>
+          <div class="poster-meta">
+            <span class="ep-badge">${epStr}</span>
+            <span class="ep-date">${dateStr}</span>
+            <button class="watch-btn ${isWatched ? 'watched-btn-active' : ''}" onclick="toggleWatched(${showId}, ${item.episode.season_number}, ${item.episode.episode_number})" title="${isWatched ? 'Mark unwatched' : 'Mark watched'}">
+              ${isWatched ? '✔' : '○'}
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  });
+  return showsHtml;
+}
+
+// Monthly Calendar Grid Renderer
+function renderMonthView(container, today) {
+  const targetMonth = new Date(today.getFullYear(), today.getMonth() + currentOffset, 1);
+  const year = targetMonth.getFullYear();
+  const month = targetMonth.getMonth();
+  
+  // First and last day of target month
+  const firstDayOfMonth = new Date(year, month, 1);
+  const lastDayOfMonth = new Date(year, month + 1, 0, 23, 59, 59, 999);
+
+  // Update Range Label
+  const rangeLabel = document.getElementById('schedule-range-label');
+  if (rangeLabel) {
+    rangeLabel.textContent = firstDayOfMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  }
+
+  // Calendar Grid Start: find Monday on or before the 1st
+  const firstDayWeekday = firstDayOfMonth.getDay(); // 0 = Sun, 1 = Mon ...
+  const startOffset = firstDayWeekday === 0 ? 6 : firstDayWeekday - 1;
+  const gridStart = new Date(year, month, 1 - startOffset, 0, 0, 0, 0);
+
+  // Calendar Grid End: find Sunday on or after last day
+  const lastDayWeekday = lastDayOfMonth.getDay();
+  const endOffset = lastDayWeekday === 0 ? 0 : 7 - lastDayWeekday;
+  const gridEnd = new Date(year, month + 1, 0 + endOffset, 23, 59, 59, 999);
+
+  // Build Day Cells
+  const calendarCells = [];
+  let curr = new Date(gridStart);
+  while (curr <= gridEnd) {
+    calendarCells.push({
+      dateObj: new Date(curr),
+      dayNumber: curr.getDate(),
+      isCurrentMonth: curr.getMonth() === month,
+      isToday: curr.toDateString() === today.toDateString(),
+      shows: []
+    });
+    curr.setDate(curr.getDate() + 1);
+  }
+
+  // Match shows in active grid window
+  globalShowsData.forEach(show => {
+    if (searchQuery && !show.name.toLowerCase().includes(searchQuery)) return;
+    let status = (show.status || '').toLowerCase();
+    if (status === 'canceled' || status === 'ended') return;
+
+    const matchedEps = getShowEpisodesInRange(show, gridStart, gridEnd);
+    matchedEps.forEach(item => {
+      const itemDateStr = item.dateObj.toDateString();
+      const targetCell = calendarCells.find(c => c.dateObj.toDateString() === itemDateStr);
+      if (targetCell) {
+        targetCell.shows.push(item);
+      }
+    });
+  });
+
+  const weekdayHeaders = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  let html = `
+    <div class="month-calendar-view">
+      <div class="month-grid-header">
+        ${weekdayHeaders.map(w => `<div class="month-weekday-title">${w}</div>`).join('')}
+      </div>
+      <div class="month-grid">
+  `;
+
+  calendarCells.forEach(cell => {
+    cell.shows.sort((a, b) => a.dateObj - b.dateObj);
+    
+    let showsHtml = '';
+    cell.shows.forEach(item => {
+      const showId = item.show.id || item.show.tmdb_id;
+      const posterUrl = item.show.poster_path ? `${IMAGE_BASE}${item.show.poster_path}` : (item.show.backdrop_path ? `${IMAGE_BASE}${item.show.backdrop_path}` : 'https://via.placeholder.com/100x150?text=TV');
+      const epStr = `S${item.episode.season_number}E${item.episode.episode_number}`;
+      const isPremiere = item.episode.episode_number === 1;
+      const isFinale = item.episode.episode_type === 'finale';
+      
+      let badgeHtml = '';
+      if (isPremiere) {
+        badgeHtml = `<span class="badge-mini-premiere">Premiere</span>`;
+      } else if (isFinale) {
+        badgeHtml = `<span class="badge-mini-finale">Finale</span>`;
+      }
+
+      const epKey = `${showId}-S${item.episode.season_number}E${item.episode.episode_number}`;
+      const isWatched = !!watchedHistory[epKey];
+
+      showsHtml += `
+        <div class="month-show-card ${isWatched ? 'watched-card' : ''}" title="${item.show.name} - ${epStr}">
+          <img src="${posterUrl}" alt="${item.show.name}" class="month-show-img" loading="lazy">
+          <div class="month-show-details">
+            <span class="month-show-title">${item.show.name}</span>
+            <div class="month-show-sub">
+              <span class="month-ep-badge">${epStr}</span>
+              ${badgeHtml}
+            </div>
+          </div>
+          <button class="watch-btn-mini ${isWatched ? 'watched-active' : ''}" onclick="toggleWatched(${showId}, ${item.episode.season_number}, ${item.episode.episode_number})" title="${isWatched ? 'Watched' : 'Mark Watched'}">
+            ${isWatched ? '✔' : '○'}
+          </button>
+        </div>
+      `;
+    });
+
+    html += `
+      <div class="month-day-cell ${cell.isCurrentMonth ? '' : 'other-month'} ${cell.isToday ? 'month-today' : ''}">
+        <div class="month-day-header">
+          <span class="month-day-num ${cell.isToday ? 'today-badge' : ''}">${cell.dayNumber}</span>
+        </div>
+        <div class="month-day-events">
+          ${showsHtml}
+        </div>
+      </div>
+    `;
+  });
+
+  html += `
+      </div>
+    </div>
+  `;
+
   container.innerHTML = html;
 }
 
