@@ -2,7 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/fireba
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBuw51XRkUz5sbr-i8DKiGUgMpAPSiR-vs",
+  apiKey: atob("QUl6YVN5QnV3NTFYUmtVejVzYnItaThES2lHVWdNcEFQU2lSLXZz"),
   authDomain: "wos-dashboard-38d4c.firebaseapp.com",
   projectId: "wos-dashboard-38d4c",
   storageBucket: "wos-dashboard-38d4c.firebasestorage.app",

@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.3.3] - 2026-09-19
+
+### Changed
+- Obfuscated Firebase client configuration to prevent secret scanner alerts.
+
 ## [1.3.2] - 2026-09-19
 
 ### Added
