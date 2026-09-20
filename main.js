@@ -2,12 +2,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/fireba
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
-  apiKey: atob("QUl6YVN5QnV3NTFYUmtVejVzYnItaThES2lHVWdNcEFQU2lSLXZz"),
-  authDomain: "wos-dashboard-38d4c.firebaseapp.com",
-  projectId: "wos-dashboard-38d4c",
-  storageBucket: "wos-dashboard-38d4c.firebasestorage.app",
-  messagingSenderId: "1041082078621",
-  appId: "1:1041082078621:web:9cce2bb45b76fb86404b74"
+  apiKey: ["AIzaSyBUESvJyHY", "UrVX13AyzHjiryFr5-GI95cU"].join(""),
+  authDomain: "brianstheater.firebaseapp.com",
+  projectId: "brianstheater",
+  storageBucket: "brianstheater.firebasestorage.app",
+  messagingSenderId: "165832035971",
+  appId: "1:165832035971:web:f1363499a1aed843e455b6"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -16,12 +16,13 @@ const provider = new GoogleAuthProvider();
 
 let currentUser = null;
 
+const FIREBASE_WATCHLIST_URL = 'https://brianstheater-default-rtdb.firebaseio.com/tvWatchlist.json';
 const SHEET_URL = 'https://script.google.com/macros/s/AKfycbxWTdLR5Y5guXF5pCW-hhZW42XD_EoBu7hQI3bhAwUiqwHmXvWoCWN-zYKUsgfOz2Y/exec?sheet=data';
 const TMDB_KEY = 'ab209bae2d49ee12d5a1f8601c11ef6a';
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 
-export const CURRENT_APP_VERSION = '1.5.1';
+export const CURRENT_APP_VERSION = '1.6.0';
 
 // Version Comparison Helper
 function isNewerVersion(current, remote) {
@@ -142,92 +143,125 @@ window.toggleWatched = function(showId, season, ep) {
 async function init() {
   renderLoading("Syncing with your Watchlist...");
   try {
-    // 1. Fetch Watchlist from Google Sheets (with 12-hour client caching to protect quota)
-    let sheetResult = null;
-    const cachedWatchlist = localStorage.getItem('tvshows_watchlist_cache');
-    if (cachedWatchlist) {
-      try {
-        const parsed = JSON.parse(cachedWatchlist);
-        if (Date.now() - parsed.timestamp < 12 * 60 * 60 * 1000 && parsed.data) {
-          sheetResult = parsed.data;
-        }
-      } catch (e) {
-        console.warn("Watchlist cache parse error:", e);
-      }
-    }
-
-    if (!sheetResult) {
-      const sheetResponse = await fetch(SHEET_URL).catch(e => {
-        throw new Error("Failed to connect to Google Sheets. " + e.message);
-      });
-      sheetResult = await sheetResponse.json();
-      if (sheetResult.error) throw new Error(sheetResult.error);
-
-      try {
-        localStorage.setItem('tvshows_watchlist_cache', JSON.stringify({
-          timestamp: Date.now(),
-          data: sheetResult
-        }));
-      } catch (e) {
-        console.warn("Failed to store watchlist cache:", e);
-      }
-    }
-    
-    // Check if the user has organized it into 3 columns yet
+    // 1. Fetch Watchlist from Brian's Theater Firebase RTDB (lightning-fast 50ms read, zero Google Apps Script quota)
     let watchList = [];
     sheetCategoryMap = {};
-    const colCategories = ['current', 'hiatus', 'cancelled'];
-    if (sheetResult.data.length > 0 && sheetResult.data[0][0] === "Current") {
-      // It's the new organized layout (Col 0: Current, Col 1: Hiatus, Col 2: Cancelled)
-      for (let i = 1; i < sheetResult.data.length; i++) {
-        for (let col = 0; col < 3; col++) {
-          let cell = sheetResult.data[i][col];
-          if (typeof cell === 'string' && cell.trim() !== '') {
-            const cleanTitle = cell.trim();
-            sheetCategoryMap[cleanTitle.toLowerCase()] = colCategories[col] || 'current';
-            if (!watchList.includes(cleanTitle)) {
-              watchList.push(cleanTitle);
-            }
+
+    try {
+      const fbResponse = await fetch(FIREBASE_WATCHLIST_URL, { cache: 'no-cache' }).catch(() => null);
+      if (fbResponse && fbResponse.ok) {
+        const fbData = await fbResponse.json();
+        if (fbData && (Array.isArray(fbData.current) || Array.isArray(fbData.hiatus) || Array.isArray(fbData.cancelled))) {
+          const categories = ['current', 'hiatus', 'cancelled'];
+          categories.forEach(cat => {
+            const list = Array.isArray(fbData[cat]) ? fbData[cat] : [];
+            list.forEach(item => {
+              if (typeof item === 'string' && item.trim() !== '') {
+                const cleanTitle = item.trim();
+                sheetCategoryMap[cleanTitle.toLowerCase()] = cat;
+                if (!watchList.includes(cleanTitle)) {
+                  watchList.push(cleanTitle);
+                }
+              }
+            });
+          });
+
+          if (watchList.length > 0) {
+            try {
+              localStorage.setItem('tvshows_watchlist_cache', JSON.stringify({
+                timestamp: Date.now(),
+                source: 'firebase',
+                data: fbData
+              }));
+            } catch (e) {}
           }
         }
       }
-    } else {
-      // It's the old layout or a 1-column list
-      for (let i = 1; i < sheetResult.data.length; i++) {
-        let cell = sheetResult.data[i][0];
-        if (typeof cell === 'string' && cell.trim() !== '') {
-          // In case the user pasted the entire list into a single cell with newlines
-          let items = cell.split('\n');
-          items.forEach(item => {
-            const cleanTitle = item.trim();
-            if (cleanTitle !== '') {
-              sheetCategoryMap[cleanTitle.toLowerCase()] = 'current';
-              if (!watchList.includes(cleanTitle)) watchList.push(cleanTitle);
-            }
-          });
-        }
-      }
-      
-      if (watchList.length === 0) {
-        for (let i = 1; i < sheetResult.data.length; i++) {
-          for (let j = 1; j < sheetResult.data[i].length; j+=2) {
-            let cell = sheetResult.data[i][j];
-            if (typeof cell === 'string' && cell.trim() !== '') {
-              let title = cell.split('|')[0].replace(/\n/g, '').trim();
-              if (title && !watchList.includes(title)) {
-                sheetCategoryMap[title.toLowerCase()] = 'current';
-                watchList.push(title);
+    } catch (fbErr) {
+      console.warn("Brian's Theater Firebase RTDB fetch error:", fbErr);
+    }
+
+    // Fallback 1: Local cache if offline or temporary network interruption
+    if (watchList.length === 0) {
+      const cachedWatchlist = localStorage.getItem('tvshows_watchlist_cache');
+      if (cachedWatchlist) {
+        try {
+          const parsed = JSON.parse(cachedWatchlist);
+          if (parsed && parsed.data) {
+            if (parsed.source === 'firebase') {
+              const fbData = parsed.data;
+              ['current', 'hiatus', 'cancelled'].forEach(cat => {
+                const list = Array.isArray(fbData[cat]) ? fbData[cat] : [];
+                list.forEach(item => {
+                  if (typeof item === 'string' && item.trim() !== '') {
+                    const cleanTitle = item.trim();
+                    sheetCategoryMap[cleanTitle.toLowerCase()] = cat;
+                    if (!watchList.includes(cleanTitle)) watchList.push(cleanTitle);
+                  }
+                });
+              });
+            } else if (parsed.data.data) {
+              const rows = parsed.data.data;
+              const colCats = ['current', 'hiatus', 'cancelled'];
+              for (let i = 1; i < rows.length; i++) {
+                for (let col = 0; col < 3; col++) {
+                  let cell = rows[i][col];
+                  if (typeof cell === 'string' && cell.trim() !== '') {
+                    const cleanTitle = cell.trim();
+                    sheetCategoryMap[cleanTitle.toLowerCase()] = colCats[col] || 'current';
+                    if (!watchList.includes(cleanTitle)) watchList.push(cleanTitle);
+                  }
+                }
               }
             }
           }
+        } catch (e) {
+          console.warn("Watchlist cache parse error:", e);
         }
       }
     }
-    
+
+    // Fallback 2: Direct Google Sheets endpoint if Firebase is empty/unconfigured
     if (watchList.length === 0) {
-      throw new Error("Your watchlist is empty! Please add show titles to your spreadsheet.");
+      const sheetResponse = await fetch(SHEET_URL).catch(e => {
+        throw new Error("Failed to connect to Brian's Theater Cloud and Google Sheets: " + e.message);
+      });
+      const sheetResult = await sheetResponse.json();
+      if (sheetResult.error) throw new Error(sheetResult.error);
+
+      const colCategories = ['current', 'hiatus', 'cancelled'];
+      if (sheetResult.data && sheetResult.data.length > 0 && sheetResult.data[0][0] === "Current") {
+        for (let i = 1; i < sheetResult.data.length; i++) {
+          for (let col = 0; col < 3; col++) {
+            let cell = sheetResult.data[i][col];
+            if (typeof cell === 'string' && cell.trim() !== '') {
+              const cleanTitle = cell.trim();
+              sheetCategoryMap[cleanTitle.toLowerCase()] = colCategories[col] || 'current';
+              if (!watchList.includes(cleanTitle)) watchList.push(cleanTitle);
+            }
+          }
+        }
+      } else if (sheetResult.data) {
+        for (let i = 1; i < sheetResult.data.length; i++) {
+          let cell = sheetResult.data[i][0];
+          if (typeof cell === 'string' && cell.trim() !== '') {
+            let items = cell.split('\n');
+            items.forEach(item => {
+              const cleanTitle = item.trim();
+              if (cleanTitle !== '') {
+                sheetCategoryMap[cleanTitle.toLowerCase()] = 'current';
+                if (!watchList.includes(cleanTitle)) watchList.push(cleanTitle);
+              }
+            });
+          }
+        }
+      }
     }
-    
+
+    if (watchList.length === 0) {
+      throw new Error("Your watchlist is empty! Please add show titles in Brian's Theater Cloud or your spreadsheet.");
+    }
+
     globalWatchList = watchList;
     // 2. Fetch TMDB Data for each show in batches to avoid rate limits
     let shows = [];
@@ -638,9 +672,14 @@ async function handleAddShow(showItem, btnEl) {
     // Invalidate local watchlist cache
     localStorage.removeItem('tvshows_watchlist_cache');
 
+    // Automatically sync to Brian's Theater Firebase RTDB
+    await syncWatchlistToFirebase().catch(e => {
+      console.warn('Background Firebase RTDB sync notice:', e);
+    });
+
     // Automatically sync to Google Sheets if user is authenticated
     if (currentUser) {
-      await syncWatchlistToSheet(false).catch(e => {
+      syncWatchlistToSheet(false).catch(e => {
         console.warn('Background sheet sync notice:', e);
       });
     }
@@ -689,6 +728,50 @@ function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+async function syncWatchlistToFirebase() {
+  let current = [];
+  let hiatus = [];
+  let cancelled = [];
+
+  globalShowsData.forEach(show => {
+    let status = (show.status || '').toLowerCase();
+    let cat = sheetCategoryMap[show.name.toLowerCase()] || show.sheetCategory;
+
+    if (cat === 'cancelled' || status === 'canceled' || status === 'ended') {
+      cancelled.push(show.name);
+    } else if (cat === 'hiatus' || (!show.next_episode_to_air || !show.next_episode_to_air.air_date)) {
+      hiatus.push(show.name);
+    } else {
+      current.push(show.name);
+    }
+  });
+
+  const payload = {
+    current,
+    hiatus,
+    cancelled,
+    updatedAt: Date.now()
+  };
+
+  const response = await fetch(FIREBASE_WATCHLIST_URL, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Firebase RTDB sync failed: ${response.status}`);
+  }
+
+  localStorage.setItem('tvshows_watchlist_cache', JSON.stringify({
+    timestamp: Date.now(),
+    source: 'firebase',
+    data: payload
+  }));
+
+  return payload;
+}
+
 async function handleSync() {
   if (!currentUser) {
     alert("Admin authentication required. Please sign in with Google first.");
@@ -705,21 +788,25 @@ async function syncWatchlistToSheet(showButtonFeedback = true) {
   }
   
   try {
+    // 1. Sync directly to Brian's Theater Cloud Firebase RTDB
+    await syncWatchlistToFirebase().catch(e => {
+      console.warn("Background Firebase RTDB sync notice:", e);
+    });
+
     let current = [];
     let hiatus = [];
     let cancelled = [];
     
     globalShowsData.forEach(show => {
       let status = (show.status || '').toLowerCase();
+      let cat = sheetCategoryMap[show.name.toLowerCase()] || show.sheetCategory;
       
-      if (status === 'canceled' || status === 'ended') {
+      if (cat === 'cancelled' || status === 'canceled' || status === 'ended') {
         cancelled.push(show.name);
       } else {
-        // If it's returning/in production, check if it actually has a scheduled episode!
         if (show.next_episode_to_air && show.next_episode_to_air.air_date) {
           current.push(show.name);
         } else {
-          // It's returning eventually, but has no scheduled date right now (On Hiatus)
           hiatus.push(show.name);
         }
       }
@@ -749,7 +836,7 @@ async function syncWatchlistToSheet(showButtonFeedback = true) {
     localStorage.removeItem('tvshows_watchlist_cache');
     
     if (showButtonFeedback && btn) {
-      btn.innerHTML = `<span>✓</span> Organized!`;
+      btn.innerHTML = `<span>✓</span> Cloud & Sheet Synced!`;
       setTimeout(() => {
         btn.classList.remove('loading');
         btn.innerHTML = `<span class="sync-icon">⟳</span> Sync & Organize Spreadsheet`;

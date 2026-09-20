@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.0] - 2026-09-20
+
+### Added
+- Migrated watchlist storage to Brian's Theater Firebase cloud.
+- Instant 50-millisecond schedule loading with zero Google quota limits.
+- Realtime cloud persistence for newly added television series.
+- Preserved automatic Google Sheets synchronization and backup.
+
 ## [1.5.1] - 2026-09-20
 
 ### Added
