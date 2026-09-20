@@ -76,18 +76,13 @@
         <div class="modal-header">
           <div class="modal-title-lock">
             <span class="lock-icon">🔒</span>
-            <h2>Admin Security Panel</h2>
+            <h2>Admin Panel</h2>
           </div>
           <button id="admin-close-btn" class="close-icon-btn">×</button>
         </div>
 
         <!-- Logged Out State -->
         <div id="admin-logged-out" class="admin-state-view">
-          <div class="security-banner">
-            <div class="shield-badge">🛡️</div>
-            <h3>Authentication Required</h3>
-            <p>Admin spreadsheet sync and organization controls are restricted to authorized administrators.</p>
-          </div>
           <div class="admin-auth-actions">
             <button id="google-signin-btn" class="google-signin-btn">
               <svg class="google-icon" viewBox="0 0 24 24" width="20" height="20">
@@ -100,7 +95,6 @@
             </button>
             <div id="auth-status-msg" class="auth-status-msg hidden"></div>
           </div>
-          <p class="modal-hint">Protected with Firebase Authentication to prevent API spam and Google Sheets quota lockouts.</p>
         </div>
 
         <!-- Logged In State -->
@@ -118,13 +112,11 @@
           </div>
 
           <div class="admin-actions-section">
-            <p class="modal-desc">Spreadsheet Management & Automation:</p>
             <div class="admin-actions">
               <button id="sync-btn" class="sync-btn full-width">
                 <span class="sync-icon">⟳</span> Sync & Organize Spreadsheet
               </button>
             </div>
-            <p class="modal-hint">Checks all shows on TMDB and automatically sorts them into Current, Hiatus, or Cancelled columns in your Google Sheet.</p>
           </div>
         </div>
       </div>
@@ -138,10 +130,10 @@
     </main>
     
     <footer>
-      <p>Data synced from Google Sheets | TV Show Tracker v1.3.0</p>
+      <p>Data synced from Google Sheets | TV Show Tracker v1.3.1</p>
     </footer>
   </div>
 
-  <script src="main.js?v=6" type="module"></script>
+  <script src="main.js?v=7" type="module"></script>
 </body>
 </html>

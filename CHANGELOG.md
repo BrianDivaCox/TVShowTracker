@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.1] - 2026-09-19
+
+### Changed
+- Streamlined Admin Panel dialog to show only Google Sign-In.
+- Removed verbose explanatory text and quota safety descriptions.
+- Compacted admin modal dialog dimensions for cleaner display.
+
 ## [1.3.0] - 2026-09-19
 
 ### Added
