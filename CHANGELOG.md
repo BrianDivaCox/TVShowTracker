@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.4.1] - 2026-09-20
+
+### Fixed
+- Fixed GitHub Actions duplicate workflow runs and environment deployment errors.
+
 ## [1.4.0] - 2026-09-20
 
 ### Added
