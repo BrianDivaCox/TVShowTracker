@@ -22,6 +22,7 @@ const TMDB_BASE = 'https://api.themoviedb.org/3';
 const IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 
 let globalWatchList = [];
+let sheetCategoryMap = {};
 let globalShowsData = [];
 let currentTab = 'schedule';
 let searchQuery = '';
@@ -77,13 +78,19 @@ async function init() {
     
     // Check if the user has organized it into 3 columns yet
     let watchList = [];
+    sheetCategoryMap = {};
+    const colCategories = ['current', 'hiatus', 'cancelled'];
     if (sheetResult.data.length > 0 && sheetResult.data[0][0] === "Current") {
       // It's the new organized layout (Col 0: Current, Col 1: Hiatus, Col 2: Cancelled)
       for (let i = 1; i < sheetResult.data.length; i++) {
         for (let col = 0; col < 3; col++) {
           let cell = sheetResult.data[i][col];
-          if (typeof cell === 'string' && cell.trim() !== '' && !watchList.includes(cell.trim())) {
-            watchList.push(cell.trim());
+          if (typeof cell === 'string' && cell.trim() !== '') {
+            const cleanTitle = cell.trim();
+            sheetCategoryMap[cleanTitle.toLowerCase()] = colCategories[col] || 'current';
+            if (!watchList.includes(cleanTitle)) {
+              watchList.push(cleanTitle);
+            }
           }
         }
       }
@@ -95,7 +102,11 @@ async function init() {
           // In case the user pasted the entire list into a single cell with newlines
           let items = cell.split('\n');
           items.forEach(item => {
-            if (item.trim() !== '') watchList.push(item.trim());
+            const cleanTitle = item.trim();
+            if (cleanTitle !== '') {
+              sheetCategoryMap[cleanTitle.toLowerCase()] = 'current';
+              if (!watchList.includes(cleanTitle)) watchList.push(cleanTitle);
+            }
           });
         }
       }
@@ -106,7 +117,10 @@ async function init() {
             let cell = sheetResult.data[i][j];
             if (typeof cell === 'string' && cell.trim() !== '') {
               let title = cell.split('|')[0].replace(/\n/g, '').trim();
-              if (title && !watchList.includes(title)) watchList.push(title);
+              if (title && !watchList.includes(title)) {
+                sheetCategoryMap[title.toLowerCase()] = 'current';
+                watchList.push(title);
+              }
             }
           }
         }
@@ -155,8 +169,12 @@ async function init() {
       }
     }
     
-    // Filter out failed searches
-    globalShowsData = shows.filter(s => s !== null);
+    // Filter out failed searches and attach sheet column category
+    globalShowsData = shows.filter(s => s !== null).map(s => {
+      const titleLower = (s.name || '').toLowerCase();
+      s.sheetCategory = sheetCategoryMap[titleLower] || 'current';
+      return s;
+    });
     
     // 3. Setup Tabs
     const appTabs = document.getElementById('app-tabs');
@@ -506,6 +524,8 @@ async function handleAddShow(showItem, btnEl) {
     if (!globalWatchList.includes(showItem.name)) {
       globalWatchList.push(showItem.name);
     }
+    fullShowData.sheetCategory = 'current';
+    sheetCategoryMap[showItem.name.toLowerCase()] = 'current';
     const existingIndex = globalShowsData.findIndex(s => (s.id && s.id === showItem.id) || s.name.toLowerCase() === showItem.name.toLowerCase());
     if (existingIndex >= 0) {
       globalShowsData[existingIndex] = fullShowData;
@@ -671,25 +691,45 @@ async function fetchShowData(query, cacheKey, explicitId = null) {
     const detailRes = await fetch(`${TMDB_BASE}/tv/${showId}?api_key=${TMDB_KEY}`);
     const showData = await detailRes.json();
     
-    // Fetch current season episodes to support multi-week & monthly schedules
-    let targetSeason = null;
+    // Fetch current and upcoming season episodes to support multi-week & monthly schedules
+    const seasonsToFetch = new Set();
     if (showData.next_episode_to_air && showData.next_episode_to_air.season_number) {
-      targetSeason = showData.next_episode_to_air.season_number;
-    } else if (showData.last_episode_to_air && showData.last_episode_to_air.season_number) {
-      targetSeason = showData.last_episode_to_air.season_number;
-    } else if (Array.isArray(showData.seasons) && showData.seasons.length > 0) {
+      seasonsToFetch.add(showData.next_episode_to_air.season_number);
+    }
+    if (showData.last_episode_to_air && showData.last_episode_to_air.season_number) {
+      seasonsToFetch.add(showData.last_episode_to_air.season_number);
+    }
+    if (Array.isArray(showData.seasons) && showData.seasons.length > 0) {
       const regSeasons = showData.seasons.filter(s => s.season_number > 0);
       if (regSeasons.length > 0) {
-        targetSeason = regSeasons[regSeasons.length - 1].season_number;
+        seasonsToFetch.add(regSeasons[regSeasons.length - 1].season_number);
       }
+      // Look for any upcoming season premiering within the next 90 days
+      const now = new Date();
+      showData.seasons.forEach(s => {
+        if (s.season_number > 0 && s.air_date) {
+          const sDate = new Date(s.air_date + 'T00:00:00');
+          const diffDays = (sDate - now) / (1000 * 60 * 60 * 24);
+          if (diffDays >= -14 && diffDays <= 90) {
+            seasonsToFetch.add(s.season_number);
+          }
+        }
+      });
     }
     
-    if (targetSeason !== null && targetSeason !== undefined) {
+    showData.current_season_episodes = [];
+    for (const seasonNum of seasonsToFetch) {
       try {
-        const seasonRes = await fetch(`${TMDB_BASE}/tv/${showId}/season/${targetSeason}?api_key=${TMDB_KEY}`);
+        const seasonRes = await fetch(`${TMDB_BASE}/tv/${showId}/season/${seasonNum}?api_key=${TMDB_KEY}`);
         if (seasonRes.ok) {
           const seasonData = await seasonRes.json();
-          showData.current_season_episodes = seasonData.episodes || [];
+          if (Array.isArray(seasonData.episodes)) {
+            seasonData.episodes.forEach(ep => {
+              if (!showData.current_season_episodes.some(e => e.id === ep.id)) {
+                showData.current_season_episodes.push(ep);
+              }
+            });
+          }
         }
       } catch (seasonErr) {
         // Fallback gracefully without throwing
@@ -738,23 +778,147 @@ function renderView() {
   }
 }
 
+// Smart Status Engine: replaces raw TMDB 'Returning Series' with dynamic intelligence
+function getSmartStatus(show) {
+  const rawStatus = (show.status || '').toLowerCase();
+  
+  // 1. Officially Canceled or Ended
+  if (rawStatus === 'canceled' || rawStatus === 'ended') {
+    const endYear = show.last_air_date ? show.last_air_date.slice(0, 4) : '';
+    return {
+      type: 'ended',
+      label: rawStatus === 'canceled' ? 'Cancelled' : 'Ended',
+      badgeClass: 'badge-status-ended',
+      detail: endYear ? `Ended in ${endYear}` : 'Series concluded'
+    };
+  }
+
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+  
+  // Find next episode date
+  let nextDate = null;
+  let nextEp = show.next_episode_to_air;
+  if (nextEp && nextEp.air_date) {
+    nextDate = new Date(nextEp.air_date + 'T00:00:00');
+  } else if (Array.isArray(show.current_season_episodes)) {
+    const upcoming = show.current_season_episodes
+      .filter(e => e.air_date && e.air_date >= todayStr)
+      .sort((a, b) => a.air_date.localeCompare(b.air_date));
+    if (upcoming.length > 0) {
+      nextDate = new Date(upcoming[0].air_date + 'T00:00:00');
+      nextEp = upcoming[0];
+    }
+  }
+
+  // Also check if any upcoming season has an announced future air date
+  if (!nextDate && Array.isArray(show.seasons)) {
+    const upcomingSeasons = show.seasons
+      .filter(s => s.season_number > 0 && s.air_date && s.air_date >= todayStr)
+      .sort((a, b) => a.air_date.localeCompare(b.air_date));
+    if (upcomingSeasons.length > 0) {
+      nextDate = new Date(upcomingSeasons[0].air_date + 'T00:00:00');
+      nextEp = {
+        season_number: upcomingSeasons[0].season_number,
+        episode_number: 1,
+        name: `${upcomingSeasons[0].name || ('Season ' + upcomingSeasons[0].season_number)} Premiere`,
+        air_date: upcomingSeasons[0].air_date
+      };
+    }
+  }
+
+  // Check last episode date
+  let lastDate = null;
+  if (show.last_episode_to_air && show.last_episode_to_air.air_date) {
+    lastDate = new Date(show.last_episode_to_air.air_date + 'T00:00:00');
+  }
+
+  // 2. Airing Now: episode within last 7 days OR upcoming in next 7 days
+  if (nextDate) {
+    const diffDays = Math.round((nextDate - now) / (1000 * 60 * 60 * 24));
+    if (diffDays >= 0 && diffDays <= 7) {
+      return {
+        type: 'airing',
+        label: 'Airing Now',
+        badgeClass: 'badge-status-airing',
+        detail: diffDays === 0 ? 'New Episode Today' : (diffDays === 1 ? 'New Episode Tomorrow' : `Next in ${diffDays} days`)
+      };
+    } else if (diffDays > 7 && diffDays <= 90) {
+      const monthDay = nextDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const label = nextEp && nextEp.episode_number === 1 
+        ? `S${nextEp.season_number} Premiere ${monthDay}`
+        : `Returns ${monthDay}`;
+      return {
+        type: 'returns-soon',
+        label: label,
+        badgeClass: 'badge-status-returns-soon',
+        detail: `Air date: ${monthDay}`
+      };
+    }
+  }
+
+  if (lastDate) {
+    const daysSince = Math.round((now - lastDate) / (1000 * 60 * 60 * 24));
+    if (daysSince >= 0 && daysSince <= 7) {
+      return {
+        type: 'airing',
+        label: 'Airing Now',
+        badgeClass: 'badge-status-airing',
+        detail: 'Current season in progress'
+      };
+    }
+  }
+
+  // 3. In Production / Planned
+  if (rawStatus === 'in production' || rawStatus === 'planned') {
+    return {
+      type: 'in-production',
+      label: 'In Production',
+      badgeClass: 'badge-status-production',
+      detail: 'Next season announced'
+    };
+  }
+
+  // 4. Default: On Hiatus (Between Seasons)
+  const lastSeason = show.last_episode_to_air && show.last_episode_to_air.season_number 
+    ? `Season ${show.last_episode_to_air.season_number}` 
+    : (show.number_of_seasons ? `Season ${show.number_of_seasons}` : 'Season');
+  return {
+    type: 'hiatus',
+    label: 'On Hiatus',
+    badgeClass: 'badge-status-hiatus',
+    detail: `${lastSeason} ended`
+  };
+}
+
 function renderGridView(container) {
   let filteredShows = [];
   
   if (currentTab === 'current') {
     filteredShows = globalShowsData.filter(s => {
-      let status = (s.status || '').toLowerCase();
-      return (status !== 'canceled' && status !== 'ended') && (s.next_episode_to_air && s.next_episode_to_air.air_date);
+      const smart = getSmartStatus(s);
+      if (s.sheetCategory === 'current') return smart.type !== 'ended';
+      if (s.sheetCategory === 'hiatus') {
+        return smart.type === 'airing' || smart.type === 'returns-soon';
+      }
+      return smart.type === 'airing' || smart.type === 'returns-soon';
     });
   } else if (currentTab === 'hiatus') {
     filteredShows = globalShowsData.filter(s => {
-      let status = (s.status || '').toLowerCase();
-      return (status !== 'canceled' && status !== 'ended') && (!s.next_episode_to_air || !s.next_episode_to_air.air_date);
+      const smart = getSmartStatus(s);
+      if (s.sheetCategory === 'cancelled') return false;
+      if (s.sheetCategory === 'hiatus') {
+        return smart.type !== 'airing';
+      }
+      if (s.sheetCategory === 'current') {
+        return smart.type === 'hiatus' || smart.type === 'in-production';
+      }
+      return smart.type === 'hiatus' || smart.type === 'in-production';
     });
   } else if (currentTab === 'cancelled') {
     filteredShows = globalShowsData.filter(s => {
-      let status = (s.status || '').toLowerCase();
-      return (status === 'canceled' || status === 'ended');
+      const smart = getSmartStatus(s);
+      return s.sheetCategory === 'cancelled' || smart.type === 'ended';
     });
   }
   
@@ -796,12 +960,16 @@ function renderGridView(container) {
   let html = `<div class="shows-grid">`;
   filteredShows.forEach(show => {
     const posterUrl = show.poster_path ? `${IMAGE_BASE}${show.poster_path}` : 'https://via.placeholder.com/500x750?text=No+Poster';
+    const smart = getSmartStatus(show);
     html += `
       <div class="shows-grid-card">
         <img src="${posterUrl}" alt="${show.name}" class="shows-grid-img" loading="lazy">
         <div class="shows-grid-info">
           <h3 class="shows-grid-title" title="${show.name}">${show.name}</h3>
-          <div class="shows-grid-status">${show.status || 'Unknown'}</div>
+          <div class="smart-badge-wrap">
+            <span class="smart-status-badge ${smart.badgeClass}">${smart.label}</span>
+          </div>
+          <div class="shows-grid-detail" title="${smart.detail}">${smart.detail}</div>
         </div>
       </div>
     `;
@@ -837,6 +1005,24 @@ function getShowEpisodesInRange(show, startDate, endDate) {
   
   if (show.next_episode_to_air) addEpIfInRange(show.next_episode_to_air);
   if (show.last_episode_to_air) addEpIfInRange(show.last_episode_to_air);
+
+  // If a future season has an announced premiere date but no episodes in current_season_episodes, synthesize a premiere card
+  if (Array.isArray(show.seasons)) {
+    show.seasons.forEach(s => {
+      if (s.season_number > 0 && s.air_date) {
+        const hasEp = Array.isArray(show.current_season_episodes) && show.current_season_episodes.some(e => e.season_number === s.season_number);
+        if (!hasEp) {
+          addEpIfInRange({
+            season_number: s.season_number,
+            episode_number: 1,
+            name: `${s.name || ('Season ' + s.season_number)} Premiere`,
+            air_date: s.air_date,
+            episode_type: 'premiere'
+          });
+        }
+      }
+    });
+  }
 
   return episodes;
 }
@@ -888,8 +1074,8 @@ function render1WeekView(container, today) {
   // Collect matching episodes
   globalShowsData.forEach(show => {
     if (searchQuery && !show.name.toLowerCase().includes(searchQuery)) return;
-    let status = (show.status || '').toLowerCase();
-    if (status === 'canceled' || status === 'ended') return;
+    const smart = getSmartStatus(show);
+    if (smart.type === 'ended') return;
 
     const matchedEps = getShowEpisodesInRange(show, startOfWeek, endOfWeek);
     matchedEps.forEach(item => {
@@ -984,8 +1170,8 @@ function render2WeekView(container, today) {
   // Distribute shows into weeks & days
   globalShowsData.forEach(show => {
     if (searchQuery && !show.name.toLowerCase().includes(searchQuery)) return;
-    let status = (show.status || '').toLowerCase();
-    if (status === 'canceled' || status === 'ended') return;
+    const smart = getSmartStatus(show);
+    if (smart.type === 'ended') return;
 
     const matchedEps = getShowEpisodesInRange(show, startOf2Weeks, endOf2Weeks);
     matchedEps.forEach(item => {
@@ -1131,8 +1317,8 @@ function renderMonthView(container, today) {
   // Match shows in active grid window
   globalShowsData.forEach(show => {
     if (searchQuery && !show.name.toLowerCase().includes(searchQuery)) return;
-    let status = (show.status || '').toLowerCase();
-    if (status === 'canceled' || status === 'ended') return;
+    const smart = getSmartStatus(show);
+    if (smart.type === 'ended') return;
 
     const matchedEps = getShowEpisodesInRange(show, gridStart, gridEnd);
     matchedEps.forEach(item => {

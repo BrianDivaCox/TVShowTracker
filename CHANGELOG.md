@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.0] - 2026-09-20
+
+### Added
+- Added dynamic smart status badges replacing generic returning series labels.
+- Automated detection for airing shows, season premieres, and hiatus.
+- Enhanced October schedule population with upcoming season air date lookahead.
+- Preserved spreadsheet column categories with intelligent automatic status classification.
+
 ## [1.4.1] - 2026-09-20
 
 ### Fixed
