@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.2] - 2026-09-19
+
+### Added
+- Friendly domain authorization guidance for Firebase sign-in errors.
+
+### Changed
+- Enhanced Firebase auth error message handling and display.
+
 ## [1.3.1] - 2026-09-19
 
 ### Changed

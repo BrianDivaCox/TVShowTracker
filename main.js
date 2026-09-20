@@ -262,8 +262,15 @@ async function init() {
         } catch (err) {
           console.error("Google Auth error:", err);
           if (authStatusMsg) {
-            authStatusMsg.textContent = err.message || 'Failed to sign in with Google.';
+            if (err.code === 'auth/unauthorized-domain') {
+              authStatusMsg.innerHTML = `Domain not authorized. Add <strong>${window.location.hostname}</strong> in Firebase Console &rarr; Auth &rarr; Settings &rarr; Authorized domains.`;
+            } else if (err.code === 'auth/popup-closed-by-user') {
+              authStatusMsg.textContent = 'Sign-in cancelled.';
+            } else {
+              authStatusMsg.textContent = err.message || 'Failed to sign in with Google.';
+            }
             authStatusMsg.className = 'auth-status-msg error';
+            authStatusMsg.classList.remove('hidden');
           }
         } finally {
           googleSignInBtn.disabled = false;
