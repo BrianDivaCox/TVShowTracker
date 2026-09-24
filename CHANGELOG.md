@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.2] - 2026-09-24
+
+### Added
+- Added early-season in-progress detection for newly premiered television series.
+- Moved The Floor to Current with active season badges.
+- Prevented premature season-ended labels on active weekly series.
+- Synchronized categories across Firebase cloud and Google Sheets.
+
 ## [1.6.1] - 2026-09-24
 
 ### Fixed

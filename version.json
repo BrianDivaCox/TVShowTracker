@@ -1,9 +1,9 @@
 {
-  "version": "1.6.1",
+  "version": "1.6.2",
   "releaseDate": "2026-09-24",
   "notes": [
-    "Fixed smart status engine for recently aired episodes",
-    "Preserved user current category without false hiatus badges",
-    "Added one-click pull sync from Google Sheet"
+    "Added early season in-progress detection for recent premieres",
+    "Moved The Floor to Current with active season badge",
+    "Enhanced schedule intelligence preventing premature hiatus labels"
   ]
 }

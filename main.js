@@ -22,7 +22,7 @@ const TMDB_KEY = 'ab209bae2d49ee12d5a1f8601c11ef6a';
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 
-export const CURRENT_APP_VERSION = '1.6.1';
+export const CURRENT_APP_VERSION = '1.6.2';
 
 // Version Comparison Helper
 function isNewerVersion(current, remote) {
@@ -1121,7 +1121,23 @@ function getSmartStatus(show) {
     }
   }
 
-  // 4. In Production / Planned
+  // 4. In-Season Premiere (Season premiered within last 45 days, e.g. Episode 1-4 aired recently)
+  if (lastDate && rawStatus === 'returning series') {
+    const daysSince = Math.round((now - lastDate) / (1000 * 60 * 60 * 24));
+    const lastEpNum = (show.last_episode_to_air && show.last_episode_to_air.episode_number) || 1;
+    const lastSeasonNum = (show.last_episode_to_air && show.last_episode_to_air.season_number) || 1;
+    
+    if (daysSince <= 45 && lastEpNum <= 4) {
+      return {
+        type: 'active-season',
+        label: 'Active Season',
+        badgeClass: 'badge-status-airing',
+        detail: `Season ${lastSeasonNum} in progress`
+      };
+    }
+  }
+
+  // 5. In Production / Planned
   if (rawStatus === 'in production' || rawStatus === 'planned') {
     return {
       type: 'in-production',
@@ -1131,7 +1147,7 @@ function getSmartStatus(show) {
     };
   }
 
-  // 5. Active Season for User's Current Shows (Never false "Season ended")
+  // 6. Active Season for User's Current Shows (Never false "Season ended")
   const isUserCurrent = show.sheetCategory === 'current';
   if (isUserCurrent) {
     if (lastDate) {
@@ -1153,7 +1169,7 @@ function getSmartStatus(show) {
     };
   }
 
-  // 6. Default: On Hiatus (Between Seasons) for non-current shows
+  // 7. Default: On Hiatus (Between Seasons) for non-current shows
   const lastSeason = show.last_episode_to_air && show.last_episode_to_air.season_number 
     ? `Season ${show.last_episode_to_air.season_number}` 
     : (show.number_of_seasons ? `Season ${show.number_of_seasons}` : 'Season');
@@ -1173,7 +1189,7 @@ function renderGridView(container) {
       const smart = getSmartStatus(s);
       // All user current shows stay in Current unless concluded/ended
       if (s.sheetCategory === 'current') return smart.type !== 'ended';
-      return smart.type === 'airing' || smart.type === 'returns-soon';
+      return smart.type === 'airing' || smart.type === 'returns-soon' || smart.type === 'active-season';
     });
   } else if (currentTab === 'hiatus') {
     filteredShows = globalShowsData.filter(s => {
@@ -1181,6 +1197,7 @@ function renderGridView(container) {
       if (s.sheetCategory === 'cancelled') return false;
       // Current shows should NEVER be demoted into Hiatus tab
       if (s.sheetCategory === 'current') return false;
+      if (smart.type === 'airing' || smart.type === 'returns-soon' || smart.type === 'active-season') return false;
       return true;
     });
   } else if (currentTab === 'cancelled') {
