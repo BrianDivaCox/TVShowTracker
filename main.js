@@ -22,7 +22,7 @@ const TMDB_KEY = 'ab209bae2d49ee12d5a1f8601c11ef6a';
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 
-export const CURRENT_APP_VERSION = '1.6.0';
+export const CURRENT_APP_VERSION = '1.6.1';
 
 // Version Comparison Helper
 function isNewerVersion(current, remote) {
@@ -445,10 +445,14 @@ async function init() {
       updateAdminAuthUI(user);
     });
     
-    // 6. Setup Sync Button inside Admin Modal
+    // 6. Setup Sync Buttons inside Admin Modal
     const syncBtn = document.getElementById('sync-btn');
     if (syncBtn) {
       syncBtn.addEventListener('click', handleSync);
+    }
+    const pullSheetBtn = document.getElementById('pull-sheet-btn');
+    if (pullSheetBtn) {
+      pullSheetBtn.addEventListener('click', handlePullFromSheet);
     }
 
     // 7. Setup Add Show Modal & Live TMDB Search
@@ -772,6 +776,59 @@ async function syncWatchlistToFirebase() {
   return payload;
 }
 
+async function handlePullFromSheet() {
+  const btn = document.getElementById('pull-sheet-btn');
+  if (btn) {
+    btn.classList.add('loading');
+    btn.innerHTML = `<span class="sync-icon">⟳</span> Pulling from Sheet...`;
+  }
+
+  try {
+    const res = await fetch(SHEET_URL);
+    const json = await res.json();
+    if (json.error) throw new Error(json.error);
+
+    const current = [], hiatus = [], cancelled = [];
+    if (json.data && json.data.length > 0 && json.data[0][0] === "Current") {
+      for (let i = 1; i < json.data.length; i++) {
+        const row = json.data[i];
+        if (row[0] && row[0].trim()) current.push(row[0].trim());
+        if (row[1] && row[1].trim()) hiatus.push(row[1].trim());
+        if (row[2] && row[2].trim()) cancelled.push(row[2].trim());
+      }
+    }
+
+    const payload = { current, hiatus, cancelled, updatedAt: Date.now() };
+    const putRes = await fetch(FIREBASE_WATCHLIST_URL, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify(payload)
+    });
+    if (!putRes.ok) throw new Error(`Firebase update failed: ${putRes.status}`);
+
+    localStorage.removeItem('tvshows_watchlist_cache');
+    showToast("✨ Successfully updated watchlist from Google Sheet!");
+
+    if (btn) {
+      btn.innerHTML = `<span>✓</span> Updated from Sheet!`;
+      setTimeout(() => {
+        btn.classList.remove('loading');
+        btn.innerHTML = `<span class="sync-icon">⬇</span> Pull Latest from Google Sheet`;
+      }, 3000);
+    }
+
+    setTimeout(() => {
+      window.location.reload();
+    }, 1200);
+  } catch (err) {
+    if (btn) {
+      btn.classList.remove('loading');
+      btn.innerHTML = `<span class="sync-icon">⬇</span> Pull Latest from Google Sheet`;
+    }
+    showToast(`Failed to pull from sheet: ${err.message}`, 'error');
+  }
+}
+
 async function handleSync() {
   if (!currentUser) {
     alert("Admin authentication required. Please sign in with Google first.");
@@ -1022,15 +1079,20 @@ function getSmartStatus(show) {
     lastDate = new Date(show.last_episode_to_air.air_date + 'T00:00:00');
   }
 
-  // 2. Airing Now: episode within last 7 days OR upcoming in next 7 days
+  // 2. Airing Now / New Episode (Upcoming in next 7 days, OR aired today/yesterday)
   if (nextDate) {
     const diffDays = Math.round((nextDate - now) / (1000 * 60 * 60 * 24));
-    if (diffDays >= 0 && diffDays <= 7) {
+    if (diffDays >= -1 && diffDays <= 7) {
+      let detailMsg = 'Current season in progress';
+      if (diffDays === 0) detailMsg = 'New Episode Today';
+      else if (diffDays === -1) detailMsg = 'Aired Yesterday';
+      else if (diffDays === 1) detailMsg = 'New Episode Tomorrow';
+      else if (diffDays > 1) detailMsg = `Next in ${diffDays} days`;
       return {
         type: 'airing',
         label: 'Airing Now',
         badgeClass: 'badge-status-airing',
-        detail: diffDays === 0 ? 'New Episode Today' : (diffDays === 1 ? 'New Episode Tomorrow' : `Next in ${diffDays} days`)
+        detail: detailMsg
       };
     } else if (diffDays > 7 && diffDays <= 90) {
       const monthDay = nextDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -1046,6 +1108,7 @@ function getSmartStatus(show) {
     }
   }
 
+  // 3. Aired within the last 7 days (even if next date is pending publication on TMDB)
   if (lastDate) {
     const daysSince = Math.round((now - lastDate) / (1000 * 60 * 60 * 24));
     if (daysSince >= 0 && daysSince <= 7) {
@@ -1053,12 +1116,12 @@ function getSmartStatus(show) {
         type: 'airing',
         label: 'Airing Now',
         badgeClass: 'badge-status-airing',
-        detail: 'Current season in progress'
+        detail: daysSince === 0 ? 'New Episode Today' : (daysSince === 1 ? 'Aired Yesterday' : `Aired ${daysSince} days ago`)
       };
     }
   }
 
-  // 3. In Production / Planned
+  // 4. In Production / Planned
   if (rawStatus === 'in production' || rawStatus === 'planned') {
     return {
       type: 'in-production',
@@ -1068,7 +1131,29 @@ function getSmartStatus(show) {
     };
   }
 
-  // 4. Default: On Hiatus (Between Seasons)
+  // 5. Active Season for User's Current Shows (Never false "Season ended")
+  const isUserCurrent = show.sheetCategory === 'current';
+  if (isUserCurrent) {
+    if (lastDate) {
+      const daysSince = Math.round((now - lastDate) / (1000 * 60 * 60 * 24));
+      if (daysSince <= 60) {
+        return {
+          type: 'active-season',
+          label: 'Active Season',
+          badgeClass: 'badge-status-airing',
+          detail: 'Season in progress'
+        };
+      }
+    }
+    return {
+      type: 'current',
+      label: 'Current Show',
+      badgeClass: 'badge-status-production',
+      detail: 'Tracked in Current'
+    };
+  }
+
+  // 6. Default: On Hiatus (Between Seasons) for non-current shows
   const lastSeason = show.last_episode_to_air && show.last_episode_to_air.season_number 
     ? `Season ${show.last_episode_to_air.season_number}` 
     : (show.number_of_seasons ? `Season ${show.number_of_seasons}` : 'Season');
@@ -1086,23 +1171,17 @@ function renderGridView(container) {
   if (currentTab === 'current') {
     filteredShows = globalShowsData.filter(s => {
       const smart = getSmartStatus(s);
+      // All user current shows stay in Current unless concluded/ended
       if (s.sheetCategory === 'current') return smart.type !== 'ended';
-      if (s.sheetCategory === 'hiatus') {
-        return smart.type === 'airing' || smart.type === 'returns-soon';
-      }
       return smart.type === 'airing' || smart.type === 'returns-soon';
     });
   } else if (currentTab === 'hiatus') {
     filteredShows = globalShowsData.filter(s => {
       const smart = getSmartStatus(s);
       if (s.sheetCategory === 'cancelled') return false;
-      if (s.sheetCategory === 'hiatus') {
-        return smart.type !== 'airing';
-      }
-      if (s.sheetCategory === 'current') {
-        return smart.type === 'hiatus' || smart.type === 'in-production';
-      }
-      return smart.type === 'hiatus' || smart.type === 'in-production';
+      // Current shows should NEVER be demoted into Hiatus tab
+      if (s.sheetCategory === 'current') return false;
+      return true;
     });
   } else if (currentTab === 'cancelled') {
     filteredShows = globalShowsData.filter(s => {

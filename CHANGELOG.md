@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.1] - 2026-09-24
+
+### Fixed
+- Fixed smart status labels for recently aired television episodes.
+- Preserved current shows without false hiatus or season-ended badges.
+- Added one-click sync button to pull latest spreadsheet changes.
+- Updated Firebase database directly from current Google Sheets data.
+
 ## [1.6.0] - 2026-09-20
 
 ### Added
