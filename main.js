@@ -23,7 +23,7 @@ const TMDB_BASE = 'https://api.themoviedb.org/3';
 const IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 const TVMAZE_BASE = 'https://api.tvmaze.com';
 
-export const CURRENT_APP_VERSION = '1.7.0';
+export const CURRENT_APP_VERSION = '1.7.1';
 
 // Version Comparison Helper
 function isNewerVersion(current, remote) {
@@ -1215,7 +1215,22 @@ function getSmartStatus(show) {
     };
   }
 
-  // 8. TVmaze "To Be Determined" (Season ended, awaiting renewal decision from network)
+  // 8. 2-Year Inactivity Expiration (Dormant >2 years / 730 days without future air dates)
+  // Protects users from zombie shows that never receive official cancellation press releases
+  if (!isProtectedRunning && lastDate && !nextDate) {
+    const daysSince = Math.round((now - lastDate) / (1000 * 60 * 60 * 24));
+    if (daysSince > 730) {
+      const endYear = show.last_air_date ? show.last_air_date.slice(0, 4) : lastDate.getFullYear();
+      return {
+        type: 'ended',
+        label: 'Presumed Ended',
+        badgeClass: 'badge-status-ended',
+        detail: `Dormant >2 years (Ended ${endYear})`
+      };
+    }
+  }
+
+  // 9. TVmaze "To Be Determined" (Season ended, awaiting renewal decision from network within 2 years)
   if (tvmStatus === 'to be determined') {
     const lastSeason = show.last_episode_to_air && show.last_episode_to_air.season_number 
       ? `Season ${show.last_episode_to_air.season_number}` 
@@ -1228,7 +1243,7 @@ function getSmartStatus(show) {
     };
   }
 
-  // 9. Default: On Hiatus (Between Seasons)
+  // 10. Default: On Hiatus (Between Seasons)
   const lastSeason = show.last_episode_to_air && show.last_episode_to_air.season_number 
     ? `Season ${show.last_episode_to_air.season_number}` 
     : (show.number_of_seasons ? `Season ${show.number_of_seasons}` : 'Season');

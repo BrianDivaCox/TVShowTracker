@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.1] - 2026-10-17
+
+### Added
+- Added two-year inactivity expiration rule for shows awaiting renewal.
+- Auto-classified shows dormant over two years as Presumed Ended.
+- Automatically routed dormant unrenewed series to the archive list.
+- Synchronized expiration logic across spreadsheet and cloud database exports.
+
 ## [1.7.0] - 2026-10-17
 
 ### Added

@@ -1,10 +1,10 @@
 {
-  "version": "1.7.0",
+  "version": "1.7.1",
   "releaseDate": "2026-10-17",
   "notes": [
-    "Integrated TVmaze secondary authority for dual-source verification",
-    "Added Awaiting Renewal badge for shows between seasons",
-    "Protected Futurama from premature cancellation tags",
-    "Cleaned up confirmed ended shows into archive list"
+    "Added 2-year inactivity expiration rule for awaiting renewal shows",
+    "Auto-classified dormant series as Presumed Ended after two years",
+    "Cleaned up dormant shows into the archive category",
+    "Synchronized auto-archive status with spreadsheet and cloud database"
   ]
 }
