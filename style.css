@@ -1583,6 +1583,12 @@ body {
   border: 1px solid rgba(56, 189, 248, 0.35);
 }
 
+.badge-status-awaiting {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
 .badge-status-ended {
   background: rgba(239, 68, 68, 0.15);
   color: #f87171;

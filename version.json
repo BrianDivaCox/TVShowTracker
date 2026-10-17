@@ -1,9 +1,10 @@
 {
-  "version": "1.6.2",
-  "releaseDate": "2026-09-24",
+  "version": "1.7.0",
+  "releaseDate": "2026-10-17",
   "notes": [
-    "Added early season in-progress detection for recent premieres",
-    "Moved The Floor to Current with active season badge",
-    "Enhanced schedule intelligence preventing premature hiatus labels"
+    "Integrated TVmaze secondary authority for dual-source verification",
+    "Added Awaiting Renewal badge for shows between seasons",
+    "Protected Futurama from premature cancellation tags",
+    "Cleaned up confirmed ended shows into archive list"
   ]
 }

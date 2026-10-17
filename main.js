@@ -21,8 +21,9 @@ const SHEET_URL = 'https://script.google.com/macros/s/AKfycbxWTdLR5Y5guXF5pCW-hh
 const TMDB_KEY = 'ab209bae2d49ee12d5a1f8601c11ef6a';
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
+const TVMAZE_BASE = 'https://api.tvmaze.com';
 
-export const CURRENT_APP_VERSION = '1.6.2';
+export const CURRENT_APP_VERSION = '1.7.0';
 
 // Version Comparison Helper
 function isNewerVersion(current, remote) {
@@ -738,12 +739,12 @@ async function syncWatchlistToFirebase() {
   let cancelled = [];
 
   globalShowsData.forEach(show => {
-    let status = (show.status || '').toLowerCase();
     let cat = sheetCategoryMap[show.name.toLowerCase()] || show.sheetCategory;
+    const smart = getSmartStatus(show);
 
-    if (cat === 'cancelled' || status === 'canceled' || status === 'ended') {
+    if (cat === 'cancelled' || smart.type === 'ended') {
       cancelled.push(show.name);
-    } else if (cat === 'hiatus' || (!show.next_episode_to_air || !show.next_episode_to_air.air_date)) {
+    } else if (cat === 'hiatus' || smart.type === 'hiatus' || smart.type === 'awaiting-renewal' || (!show.next_episode_to_air || !show.next_episode_to_air.air_date)) {
       hiatus.push(show.name);
     } else {
       current.push(show.name);
@@ -855,10 +856,10 @@ async function syncWatchlistToSheet(showButtonFeedback = true) {
     let cancelled = [];
     
     globalShowsData.forEach(show => {
-      let status = (show.status || '').toLowerCase();
       let cat = sheetCategoryMap[show.name.toLowerCase()] || show.sheetCategory;
+      const smart = getSmartStatus(show);
       
-      if (cat === 'cancelled' || status === 'canceled' || status === 'ended') {
+      if (cat === 'cancelled' || smart.type === 'ended') {
         cancelled.push(show.name);
       } else {
         if (show.next_episode_to_air && show.next_episode_to_air.air_date) {
@@ -982,6 +983,47 @@ async function fetchShowData(query, cacheKey, explicitId = null) {
       }
     }
     
+    // Fetch TVmaze verification data (secondary authority)
+    try {
+      const tvmCacheKey = `tvmaze_cache_${query.toLowerCase()}`;
+      let tvmData = null;
+      const cachedTvm = localStorage.getItem(tvmCacheKey);
+      if (cachedTvm) {
+        try {
+          const parsedTvm = JSON.parse(cachedTvm);
+          if (Date.now() - parsedTvm.timestamp < 24 * 60 * 60 * 1000) {
+            tvmData = parsedTvm.data;
+          }
+        } catch (e) {}
+      }
+
+      if (!tvmData) {
+        // Small delay to prevent socket resets on bulk uncached cold starts
+        await new Promise(r => setTimeout(r, 60));
+        const tvmRes = await fetch(`${TVMAZE_BASE}/singlesearch/shows?q=${encodeURIComponent(query)}`).catch(() => null);
+        if (tvmRes && tvmRes.ok) {
+          const json = await tvmRes.json();
+          tvmData = {
+            id: json.id,
+            name: json.name,
+            status: json.status, // 'Running', 'To Be Determined', 'Ended'
+            ended: json.ended,
+            premiered: json.premiered
+          };
+          localStorage.setItem(tvmCacheKey, JSON.stringify({
+            timestamp: Date.now(),
+            data: tvmData
+          }));
+        }
+      }
+
+      if (tvmData) {
+        showData.tvmaze = tvmData;
+      }
+    } catch (tvmErr) {
+      // Non-blocking TVmaze enhancement
+    }
+
     // Save to Cache
     localStorage.setItem(cacheKey, JSON.stringify({
       timestamp: Date.now(),
@@ -1024,13 +1066,26 @@ function renderView() {
   }
 }
 
-// Smart Status Engine: replaces raw TMDB 'Returning Series' with dynamic intelligence
+// Smart Status Engine: combines TMDB and TVmaze for dual-source dynamic intelligence
 function getSmartStatus(show) {
   const rawStatus = (show.status || '').toLowerCase();
-  
-  // 1. Officially Canceled or Ended
-  if (rawStatus === 'canceled' || rawStatus === 'ended') {
-    const endYear = show.last_air_date ? show.last_air_date.slice(0, 4) : '';
+  const tvmStatus = show.tvmaze && show.tvmaze.status ? show.tvmaze.status.toLowerCase() : '';
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+
+  // Check last episode date
+  let lastDate = null;
+  if (show.last_episode_to_air && show.last_episode_to_air.air_date) {
+    lastDate = new Date(show.last_episode_to_air.air_date + 'T00:00:00');
+  }
+
+  // 1. Dual-Source Protection: If TVmaze confirms 'Running' (e.g. Futurama), override TMDB "Ended"
+  const isProtectedRunning = tvmStatus === 'running' && (rawStatus === 'ended' || rawStatus === 'canceled');
+
+  // 2. Officially Canceled or Ended (unless protected by TVmaze)
+  if (!isProtectedRunning && (rawStatus === 'canceled' || rawStatus === 'ended' || tvmStatus === 'ended')) {
+    // If TVmaze says ended or TMDB says ended, check how long ago
+    const endYear = show.last_air_date ? show.last_air_date.slice(0, 4) : (show.tvmaze && show.tvmaze.ended ? show.tvmaze.ended.slice(0, 4) : '');
     return {
       type: 'ended',
       label: rawStatus === 'canceled' ? 'Cancelled' : 'Ended',
@@ -1039,9 +1094,6 @@ function getSmartStatus(show) {
     };
   }
 
-  const now = new Date();
-  const todayStr = now.toISOString().slice(0, 10);
-  
   // Find next episode date
   let nextDate = null;
   let nextEp = show.next_episode_to_air;
@@ -1073,13 +1125,7 @@ function getSmartStatus(show) {
     }
   }
 
-  // Check last episode date
-  let lastDate = null;
-  if (show.last_episode_to_air && show.last_episode_to_air.air_date) {
-    lastDate = new Date(show.last_episode_to_air.air_date + 'T00:00:00');
-  }
-
-  // 2. Airing Now / New Episode (Upcoming in next 7 days, OR aired today/yesterday)
+  // 3. Airing Now / New Episode (Upcoming in next 7 days, OR aired today/yesterday)
   if (nextDate) {
     const diffDays = Math.round((nextDate - now) / (1000 * 60 * 60 * 24));
     if (diffDays >= -1 && diffDays <= 7) {
@@ -1108,7 +1154,7 @@ function getSmartStatus(show) {
     }
   }
 
-  // 3. Aired within the last 7 days (even if next date is pending publication on TMDB)
+  // 4. Aired within the last 7 days (even if next date is pending publication on TMDB)
   if (lastDate) {
     const daysSince = Math.round((now - lastDate) / (1000 * 60 * 60 * 24));
     if (daysSince >= 0 && daysSince <= 7) {
@@ -1121,8 +1167,8 @@ function getSmartStatus(show) {
     }
   }
 
-  // 4. In-Season Premiere (Season premiered within last 45 days, e.g. Episode 1-4 aired recently)
-  if (lastDate && rawStatus === 'returning series') {
+  // 5. In-Season Premiere (Season premiered within last 45 days, e.g. Episode 1-4 aired recently)
+  if (lastDate && (rawStatus === 'returning series' || isProtectedRunning)) {
     const daysSince = Math.round((now - lastDate) / (1000 * 60 * 60 * 24));
     const lastEpNum = (show.last_episode_to_air && show.last_episode_to_air.episode_number) || 1;
     const lastSeasonNum = (show.last_episode_to_air && show.last_episode_to_air.season_number) || 1;
@@ -1137,7 +1183,7 @@ function getSmartStatus(show) {
     }
   }
 
-  // 5. In Production / Planned
+  // 6. In Production / Planned
   if (rawStatus === 'in production' || rawStatus === 'planned') {
     return {
       type: 'in-production',
@@ -1147,7 +1193,7 @@ function getSmartStatus(show) {
     };
   }
 
-  // 6. Active Season for User's Current Shows (Never false "Season ended")
+  // 7. Active Season for User's Current Shows (Never false "Season ended")
   const isUserCurrent = show.sheetCategory === 'current';
   if (isUserCurrent) {
     if (lastDate) {
@@ -1169,7 +1215,20 @@ function getSmartStatus(show) {
     };
   }
 
-  // 7. Default: On Hiatus (Between Seasons) for non-current shows
+  // 8. TVmaze "To Be Determined" (Season ended, awaiting renewal decision from network)
+  if (tvmStatus === 'to be determined') {
+    const lastSeason = show.last_episode_to_air && show.last_episode_to_air.season_number 
+      ? `Season ${show.last_episode_to_air.season_number}` 
+      : (show.number_of_seasons ? `Season ${show.number_of_seasons}` : 'Season');
+    return {
+      type: 'awaiting-renewal',
+      label: 'Awaiting Renewal',
+      badgeClass: 'badge-status-awaiting',
+      detail: `${lastSeason} ended · Decision pending`
+    };
+  }
+
+  // 9. Default: On Hiatus (Between Seasons)
   const lastSeason = show.last_episode_to_air && show.last_episode_to_air.season_number 
     ? `Season ${show.last_episode_to_air.season_number}` 
     : (show.number_of_seasons ? `Season ${show.number_of_seasons}` : 'Season');

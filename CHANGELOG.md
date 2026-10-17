@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.7.0] - 2026-10-17
+
+### Added
+- Integrated TVmaze secondary database for real-time status verification.
+- Added Awaiting Renewal status badge for between-season series.
+- Protected Futurama from premature cancellation and ended labels.
+- Cleaned up confirmed concluded series into the archive list.
+- Synchronized watchlist status across Google Sheets and cloud database.
+
 ## [1.6.2] - 2026-09-24
 
 ### Added
