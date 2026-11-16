@@ -23,7 +23,7 @@ const TMDB_BASE = 'https://api.themoviedb.org/3';
 const IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 const TVMAZE_BASE = 'https://api.tvmaze.com';
 
-export const CURRENT_APP_VERSION = '1.7.1';
+export const CURRENT_APP_VERSION = '1.8.0';
 
 // Version Comparison Helper
 function isNewerVersion(current, remote) {
@@ -278,8 +278,8 @@ async function init() {
         if (cached) {
           try {
             const parsed = JSON.parse(cached);
-            // Check if cache is less than 24 hours old
-            if (Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000 && parsed.data) {
+            // Check if cache is v1.8+ (includes TVmaze episodes) and less than 24 hours old
+            if (parsed.cacheVersion === '1.8' && Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000 && parsed.data) {
               return parsed.data; // Return instantly from cache!
             }
           } catch (e) {
@@ -330,10 +330,26 @@ async function init() {
     }
     
     // Setup Search & Sort
-    document.getElementById('search-input').addEventListener('input', (e) => {
-      searchQuery = e.target.value.toLowerCase();
-      renderView();
-    });
+    const searchInputEl = document.getElementById('search-input');
+    const searchClearBtn = document.getElementById('search-clear-btn');
+    if (searchInputEl) {
+      searchInputEl.addEventListener('input', (e) => {
+        searchQuery = e.target.value.toLowerCase();
+        if (searchClearBtn) {
+          searchClearBtn.classList.toggle('hidden', searchInputEl.value.length === 0);
+        }
+        renderView();
+      });
+    }
+    if (searchClearBtn && searchInputEl) {
+      searchClearBtn.addEventListener('click', () => {
+        searchInputEl.value = '';
+        searchQuery = '';
+        searchClearBtn.classList.add('hidden');
+        renderView();
+        searchInputEl.focus();
+      });
+    }
     
     document.getElementById('sort-select').addEventListener('change', (e) => {
       currentSort = e.target.value;
@@ -454,6 +470,18 @@ async function init() {
     const pullSheetBtn = document.getElementById('pull-sheet-btn');
     if (pullSheetBtn) {
       pullSheetBtn.addEventListener('click', handlePullFromSheet);
+    }
+    const clearCacheBtn = document.getElementById('clear-cache-btn');
+    if (clearCacheBtn) {
+      clearCacheBtn.addEventListener('click', () => {
+        Object.keys(localStorage).forEach(k => {
+          if (k.startsWith('tmdb_cache_') || k.startsWith('tvmaze_') || k === 'tvshows_watchlist_cache') {
+            localStorage.removeItem(k);
+          }
+        });
+        showToast('🔄 API cache cleared! Reloading fresh show schedules...');
+        setTimeout(() => window.location.reload(), 600);
+      });
     }
 
     // 7. Setup Add Show Modal & Live TMDB Search
@@ -934,8 +962,8 @@ async function fetchShowData(query, cacheKey, explicitId = null) {
       showId = bestMatch.id;
     }
     
-    // Fetch detailed show data
-    const detailRes = await fetch(`${TMDB_BASE}/tv/${showId}?api_key=${TMDB_KEY}`);
+    // Fetch detailed show data with external_ids for exact TVmaze matching
+    const detailRes = await fetch(`${TMDB_BASE}/tv/${showId}?api_key=${TMDB_KEY}&append_to_response=external_ids`);
     const showData = await detailRes.json();
     
     // Fetch current and upcoming season episodes to support multi-week & monthly schedules
@@ -983,49 +1011,19 @@ async function fetchShowData(query, cacheKey, explicitId = null) {
       }
     }
     
-    // Fetch TVmaze verification data (secondary authority)
+    // Fetch TVmaze verification + episode schedule data (secondary authority)
     try {
-      const tvmCacheKey = `tvmaze_cache_${query.toLowerCase()}`;
-      let tvmData = null;
-      const cachedTvm = localStorage.getItem(tvmCacheKey);
-      if (cachedTvm) {
-        try {
-          const parsedTvm = JSON.parse(cachedTvm);
-          if (Date.now() - parsedTvm.timestamp < 24 * 60 * 60 * 1000) {
-            tvmData = parsedTvm.data;
-          }
-        } catch (e) {}
-      }
-
-      if (!tvmData) {
-        // Small delay to prevent socket resets on bulk uncached cold starts
-        await new Promise(r => setTimeout(r, 60));
-        const tvmRes = await fetch(`${TVMAZE_BASE}/singlesearch/shows?q=${encodeURIComponent(query)}`).catch(() => null);
-        if (tvmRes && tvmRes.ok) {
-          const json = await tvmRes.json();
-          tvmData = {
-            id: json.id,
-            name: json.name,
-            status: json.status, // 'Running', 'To Be Determined', 'Ended'
-            ended: json.ended,
-            premiered: json.premiered
-          };
-          localStorage.setItem(tvmCacheKey, JSON.stringify({
-            timestamp: Date.now(),
-            data: tvmData
-          }));
-        }
-      }
-
+      const tvmData = await fetchTVmazeShowData(query, showData.external_ids);
       if (tvmData) {
-        showData.tvmaze = tvmData;
+        mergeTVmazeData(showData, tvmData);
       }
     } catch (tvmErr) {
       // Non-blocking TVmaze enhancement
     }
 
-    // Save to Cache
+    // Save to Cache (v1.8 includes merged TVmaze episodes)
     localStorage.setItem(cacheKey, JSON.stringify({
+      cacheVersion: '1.8',
       timestamp: Date.now(),
       data: showData
     }));
@@ -1033,6 +1031,163 @@ async function fetchShowData(query, cacheKey, explicitId = null) {
     return showData;
   } catch (e) {
     return null;
+  }
+}
+
+/**
+ * Fetches TVmaze show metadata and recent/upcoming episodes using exact TVDB/IMDb IDs
+ * when available, falling back to title search.
+ */
+async function fetchTVmazeShowData(query, externalIds) {
+  const tvmCacheKey = `tvmaze_v2_cache_${query.toLowerCase()}`;
+  const cachedTvm = localStorage.getItem(tvmCacheKey);
+  if (cachedTvm) {
+    try {
+      const parsedTvm = JSON.parse(cachedTvm);
+      if (Date.now() - parsedTvm.timestamp < 24 * 60 * 60 * 1000 && parsedTvm.data) {
+        return parsedTvm.data;
+      }
+    } catch (e) {}
+  }
+
+  // Small delay to prevent socket resets on bulk uncached cold starts
+  await new Promise(r => setTimeout(r, 60));
+
+  let tvmJson = null;
+  if (externalIds && externalIds.tvdb_id) {
+    const lookupRes = await fetch(`${TVMAZE_BASE}/lookup/shows?thetvdb=${externalIds.tvdb_id}`).catch(() => null);
+    if (lookupRes && lookupRes.ok) {
+      const matched = await lookupRes.json();
+      if (matched && matched.id) {
+        const fullRes = await fetch(`${TVMAZE_BASE}/shows/${matched.id}?embed[]=nextepisode&embed[]=episodes`).catch(() => null);
+        if (fullRes && fullRes.ok) tvmJson = await fullRes.json();
+      }
+    }
+  }
+
+  if (!tvmJson && externalIds && externalIds.imdb_id) {
+    const lookupRes = await fetch(`${TVMAZE_BASE}/lookup/shows?imdb=${externalIds.imdb_id}`).catch(() => null);
+    if (lookupRes && lookupRes.ok) {
+      const matched = await lookupRes.json();
+      if (matched && matched.id) {
+        const fullRes = await fetch(`${TVMAZE_BASE}/shows/${matched.id}?embed[]=nextepisode&embed[]=episodes`).catch(() => null);
+        if (fullRes && fullRes.ok) tvmJson = await fullRes.json();
+      }
+    }
+  }
+
+  if (!tvmJson) {
+    const searchRes = await fetch(`${TVMAZE_BASE}/singlesearch/shows?q=${encodeURIComponent(query)}&embed[]=nextepisode&embed[]=episodes`).catch(() => null);
+    if (searchRes && searchRes.ok) {
+      tvmJson = await searchRes.json();
+    }
+  }
+
+  if (!tvmJson) return null;
+
+  // Keep only episodes from the last 45 days onward to stay well within localStorage quota
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - 45);
+  const cutoffStr = cutoffDate.toISOString().slice(0, 10);
+
+  const allEps = (tvmJson._embedded && Array.isArray(tvmJson._embedded.episodes)) ? tvmJson._embedded.episodes : [];
+  const recentOrFutureEps = allEps
+    .filter(ep => ep.airdate && ep.airdate >= cutoffStr)
+    .map(ep => ({
+      id: ep.id,
+      season: ep.season,
+      number: ep.number,
+      name: ep.name,
+      airdate: ep.airdate
+    }));
+
+  const nextEpRaw = tvmJson._embedded && tvmJson._embedded.nextepisode ? tvmJson._embedded.nextepisode : null;
+  const pastEps = allEps.filter(ep => ep.airdate && ep.airdate <= new Date().toISOString().slice(0, 10));
+  const lastEpRaw = pastEps.length > 0 ? pastEps[pastEps.length - 1] : null;
+
+  const tvmData = {
+    id: tvmJson.id,
+    name: tvmJson.name,
+    status: tvmJson.status, // 'Running', 'To Be Determined', 'Ended'
+    ended: tvmJson.ended,
+    premiered: tvmJson.premiered,
+    nextEpisode: nextEpRaw && nextEpRaw.airdate ? {
+      id: nextEpRaw.id,
+      season: nextEpRaw.season,
+      number: nextEpRaw.number,
+      name: nextEpRaw.name,
+      airdate: nextEpRaw.airdate
+    } : null,
+    lastEpisode: lastEpRaw && lastEpRaw.airdate ? {
+      id: lastEpRaw.id,
+      season: lastEpRaw.season,
+      number: lastEpRaw.number,
+      name: lastEpRaw.name,
+      airdate: lastEpRaw.airdate
+    } : null,
+    episodes: recentOrFutureEps
+  };
+
+  try {
+    localStorage.setItem(tvmCacheKey, JSON.stringify({
+      timestamp: Date.now(),
+      data: tvmData
+    }));
+  } catch (e) {}
+
+  return tvmData;
+}
+
+/**
+ * Merges TVmaze upcoming episodes and nextepisode into TMDB showData
+ * whenever TMDB is missing or lagging on newly revived/announced seasons.
+ */
+function mergeTVmazeData(showData, tvmData) {
+  showData.tvmaze = tvmData;
+  if (!Array.isArray(showData.current_season_episodes)) {
+    showData.current_season_episodes = [];
+  }
+
+  if (tvmData.nextEpisode && tvmData.nextEpisode.airdate) {
+    const tmdbNextAir = showData.next_episode_to_air && showData.next_episode_to_air.air_date;
+    if (!tmdbNextAir) {
+      showData.next_episode_to_air = {
+        season_number: tvmData.nextEpisode.season,
+        episode_number: tvmData.nextEpisode.number,
+        name: tvmData.nextEpisode.name || 'TBA',
+        air_date: tvmData.nextEpisode.airdate
+      };
+    }
+  }
+
+  if (tvmData.lastEpisode && tvmData.lastEpisode.airdate) {
+    const tmdbLastAir = showData.last_episode_to_air && showData.last_episode_to_air.air_date;
+    if (!tmdbLastAir || tvmData.lastEpisode.airdate > tmdbLastAir) {
+      showData.last_episode_to_air = {
+        season_number: tvmData.lastEpisode.season,
+        episode_number: tvmData.lastEpisode.number,
+        name: tvmData.lastEpisode.name || 'TBA',
+        air_date: tvmData.lastEpisode.airdate
+      };
+    }
+  }
+
+  if (Array.isArray(tvmData.episodes)) {
+    tvmData.episodes.forEach(ep => {
+      const exists = showData.current_season_episodes.some(
+        e => (e.season_number === ep.season && e.episode_number === ep.number) || e.air_date === ep.airdate
+      );
+      if (!exists) {
+        showData.current_season_episodes.push({
+          id: `tvm-${ep.id}`,
+          season_number: ep.season,
+          episode_number: ep.number,
+          name: ep.name || 'TBA',
+          air_date: ep.airdate,
+          episode_type: ep.number === 1 ? 'premiere' : 'standard'
+        });
+      }
+    });
   }
 }
 
@@ -1079,8 +1234,10 @@ function getSmartStatus(show) {
     lastDate = new Date(show.last_episode_to_air.air_date + 'T00:00:00');
   }
 
-  // 1. Dual-Source Protection: If TVmaze confirms 'Running' (e.g. Futurama), override TMDB "Ended"
-  const isProtectedRunning = tvmStatus === 'running' && (rawStatus === 'ended' || rawStatus === 'canceled');
+  // 1. Dual-Source Protection: If TVmaze confirms 'Running' OR an upcoming episode exists, override TMDB "Ended"/"Canceled"
+  const hasUpcomingEp = (show.next_episode_to_air && show.next_episode_to_air.air_date && show.next_episode_to_air.air_date >= todayStr) ||
+    (Array.isArray(show.current_season_episodes) && show.current_season_episodes.some(e => e.air_date && e.air_date >= todayStr));
+  const isProtectedRunning = (tvmStatus === 'running' || hasUpcomingEp) && (rawStatus === 'ended' || rawStatus === 'canceled');
 
   // 2. Officially Canceled or Ended (unless protected by TVmaze)
   if (!isProtectedRunning && (rawStatus === 'canceled' || rawStatus === 'ended' || tvmStatus === 'ended')) {
@@ -1277,6 +1434,8 @@ function renderGridView(container) {
   } else if (currentTab === 'cancelled') {
     filteredShows = globalShowsData.filter(s => {
       const smart = getSmartStatus(s);
+      // Auto-Revival: never trap a revived/airing show in Archive even if old watchlist said cancelled
+      if (smart.type === 'airing' || smart.type === 'returns-soon' || smart.type === 'active-season') return false;
       return s.sheetCategory === 'cancelled' || smart.type === 'ended';
     });
   }

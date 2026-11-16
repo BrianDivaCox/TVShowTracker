@@ -34,6 +34,7 @@
         <div class="search-container">
           <span class="search-icon">🔍</span>
           <input type="text" id="search-input" placeholder="Filter shows...">
+          <button id="search-clear-btn" class="search-clear-btn hidden" title="Clear filter" aria-label="Clear filter">✕</button>
         </div>
         <button id="admin-toggle-btn" class="settings-icon-btn" title="Sync Settings">⚙️</button>
         <button id="mobile-menu-btn" class="icon-btn mobile-only" title="Menu">☰</button>
@@ -158,6 +159,12 @@
             </div>
           </div>
         </div>
+
+        <div class="admin-actions-section" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.08);">
+          <button id="clear-cache-btn" class="sync-btn full-width" style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); color: #34d399;">
+            <span class="sync-icon">🔄</span> Force Refresh Show Data
+          </button>
+        </div>
       </div>
     </div>
     
@@ -172,10 +179,10 @@
     <div id="toast-container" class="toast-container"></div>
     
     <footer>
-      <p>Synced with Brian's Theater Cloud | TV Show Tracker v1.7.1</p>
+      <p>Synced with Brian's Theater Cloud | TV Show Tracker v1.8.0</p>
     </footer>
   </div>
 
-  <script src="main.js?v=1.7.1" type="module"></script>
+  <script src="main.js?v=1.8.0" type="module"></script>
 </body>
 </html>

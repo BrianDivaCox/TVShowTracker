@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.8.0] - 2026-11-16
+
+### Added
+- Merged TVmaze upcoming episodes when TMDB data lags behind.
+- Auto-revived cancelled shows with upcoming seasons back to Current.
+- Matched TVmaze shows using exact TVDB and IMDb IDs.
+- Added one-click Force Refresh Show Data button in Settings.
+- Added clear button inside the show filter search bar.
+
 ## [1.7.1] - 2026-10-17
 
 ### Added
